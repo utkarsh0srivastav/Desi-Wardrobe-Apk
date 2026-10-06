@@ -32,6 +32,7 @@ interface CustomerOrdersPageProps {
 export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
   loggedInCustomer,
   onRequestCustomerLogin,
+  onRetryPayment,
   onBackToShops,
 }) => {
   const [orders, setOrders] = useState<Booking[]>([]);
@@ -148,7 +149,7 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
     return (
       <span className="px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase flex items-center gap-1.5">
         <CheckCircle2 className="w-3.5 h-3.5" />
-        PAYMENT VERIFIED • BOOKING SUCCESSFUL
+        PAYMENT APPROVED • BOOKING CONFIRMED
       </span>
     );
   };
@@ -388,20 +389,32 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
                 )}
 
                 {isConfirmedActive && (
-                  <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+                  <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
                       <Clock className="w-4 h-4 shrink-0" />
                       <span>
-                        Visit the shop before{' '}
+                        Pickup Deadline (48h):{' '}
                         {new Date(order.pickupDeadline).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {hasFinalBookingId ? ` · Booking ID: ${order.bookingId}` : ''}
+                      </span>
+                    </div>
+                    {order.confirmedAt && (
+                      <div className="text-[11px] font-mono-tabular text-emerald-700/80 dark:text-emerald-300/80">
+                        Confirmed:{' '}
+                        {new Date(order.confirmedAt).toLocaleString('en-IN', {
                           day: 'numeric',
                           month: 'short',
                           hour: '2-digit',
                           minute: '2-digit',
                         })}
-                        {hasFinalBookingId ? ` with Booking ID ${order.bookingId}` : ''}
-                      </span>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -415,11 +428,22 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
                 )}
 
                 {isRejected && (
-                  <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center gap-2 text-xs text-[var(--status-danger)] font-semibold">
-                    <XCircle className="w-4 h-4 shrink-0" />
-                    <span>
-                      Payment verification was rejected by Admin. This booking has been cancelled.
-                    </span>
+                  <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[var(--status-danger)] font-semibold">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        Payment verification was rejected by Admin. This booking has been cancelled.
+                      </span>
+                    </div>
+                    {onRetryPayment && (
+                      <button
+                        type="button"
+                        onClick={() => onRetryPayment(order)}
+                        className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white text-[11px] font-bold uppercase tracking-wider shrink-0 transition-colors"
+                      >
+                        Retry Payment
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

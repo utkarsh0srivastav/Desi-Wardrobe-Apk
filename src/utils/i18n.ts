@@ -33,6 +33,8 @@ export const translations = {
     aboutDesiWardrobe: 'About Desi Wardrobe',
     customerLoginRegister: 'Customer Login / Register',
     logout: 'Logout',
+    needHelpOrSupport: 'Need Help or Support?',
+    contactUsAt: 'Contact us at:',
   },
   Hindi: {
     tagline: 'आपका लोकल फैशन, एक ही जगह पर।',
@@ -60,5 +62,7 @@ export const translations = {
     aboutDesiWardrobe: 'देसी वार्डरोब के बारे में (About)',
     customerLoginRegister: 'ग्राहक लॉगिन / रजिस्टर',
     logout: 'लॉगआउट',
+    needHelpOrSupport: 'मदद या सहायता चाहिए?',
+    contactUsAt: 'Contact us at:',
   },
 } as const;

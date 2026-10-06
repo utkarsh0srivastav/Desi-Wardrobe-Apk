@@ -183,10 +183,17 @@ service cloud.firestore {
         'status',
         'createdAt',
         'confirmedAt',
-        'pickupDeadline'
+        'approvedAt',
+        'rejectedAt',
+        'pickupDeadline',
+        'createdAtServer',
+        'confirmedAtServer',
+        'approvedAtServer',
+        'rejectedAtServer'
       ]) &&
-      data.bookingId == bookingId &&
+      data.bookingId is string && data.bookingId.size() >= 1 && data.bookingId.size() <= 128 &&
       isValidId(data.bookingId) &&
+      (data.bookingId == bookingId || ('bookingReference' in data && data.bookingReference == bookingId)) &&
       (!('bookingReference' in data) || (data.bookingReference is string && data.bookingReference.size() <= 128)) &&
       (!('paymentId' in data) || (data.paymentId is string && data.paymentId.size() <= 128)) &&
       isValidId(data.customerId) &&
@@ -210,6 +217,8 @@ service cloud.firestore {
       data.status in ['PAYMENT_PENDING', 'PAYMENT_REJECTED', 'CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED', 'CANCELLED'] &&
       data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
       (!('confirmedAt' in data) || (data.confirmedAt is string && data.confirmedAt.size() <= 64)) &&
+      (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 64)) &&
+      (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() <= 64)) &&
       data.pickupDeadline is string && data.pickupDeadline.size() >= 1 && data.pickupDeadline.size() <= 64;
     }
 
@@ -261,10 +270,15 @@ service cloud.firestore {
         'submittedAt',
         'createdAt',
         'verifiedAt',
+        'approvedAt',
         'rejectedAt',
         'deletedAt',
         'screenshotDeleted',
-        'screenshotDeletedAt'
+        'screenshotDeletedAt',
+        'submittedAtServer',
+        'verifiedAtServer',
+        'approvedAtServer',
+        'rejectedAtServer'
       ]) &&
       data.paymentId == paymentId &&
       isValidId(data.paymentId) &&
@@ -293,6 +307,7 @@ service cloud.firestore {
       data.submittedAt is string && data.submittedAt.size() >= 1 && data.submittedAt.size() <= 64 &&
       (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
       (!('verifiedAt' in data) || (data.verifiedAt is string && data.verifiedAt.size() <= 64)) &&
+      (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 64)) &&
       (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() <= 64)) &&
       (!('deletedAt' in data) || (data.deletedAt is string && data.deletedAt.size() <= 64)) &&
       (!('screenshotDeleted' in data) || data.screenshotDeleted is bool) &&
@@ -522,89 +537,113 @@ service cloud.firestore {
     }
 
     match /bookings/{bookingId} {
-      allow get: if isValidId(bookingId) && existing().quantity >= 1;
-      allow list: if existing().quantity >= 1;
+      allow get: if isValidId(bookingId) && (existing().quantity >= 1 || isAdmin());
+      allow list: if existing().quantity >= 1 || isAdmin();
       allow create: if isValidId(bookingId) && isValidBooking(incoming(), bookingId) &&
         exists(/databases/$(database)/documents/shops/$(incoming().shopId));
-      allow update: if isValidId(bookingId) && isValidBooking(incoming(), bookingId) &&
-        incoming().customerId == existing().customerId &&
-        incoming().shopId == existing().shopId &&
-        incoming().shopkeeperId == existing().shopkeeperId &&
-        incoming().productId == existing().productId &&
-        incoming().createdAt == existing().createdAt &&
-        (!(existing().paymentStatus in ['APPROVED', 'VERIFIED']) || (
-          incoming().paymentStatus in ['APPROVED', 'VERIFIED'] &&
-          incoming().bookingId == existing().bookingId &&
-          incoming().bookingStatus in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED'] &&
-          incoming().status in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED']
-        )) &&
-        (!(existing().paymentStatus == 'REJECTED') || (
-          incoming().paymentStatus == 'REJECTED' &&
-          incoming().bookingStatus == 'CANCELLED' &&
-          incoming().status == 'CANCELLED'
-        )) &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'bookingId',
-          'bookingReference',
-          'paymentId',
-          'paymentAmount',
-          'paymentStatus',
-          'bookingStatus',
-          'status',
-          'confirmedAt',
-          'pickupDeadline'
-        ]);
+      allow update: if isValidId(bookingId) && isValidBooking(incoming(), bookingId) && (
+        isAdmin() ||
+        (
+          incoming().customerId == existing().customerId &&
+          incoming().shopId == existing().shopId &&
+          incoming().shopkeeperId == existing().shopkeeperId &&
+          incoming().productId == existing().productId &&
+          incoming().createdAt == existing().createdAt &&
+          (!(existing().paymentStatus in ['APPROVED', 'VERIFIED']) || (
+            incoming().paymentStatus in ['APPROVED', 'VERIFIED'] &&
+            incoming().bookingId == existing().bookingId &&
+            incoming().bookingStatus in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED'] &&
+            incoming().status in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED']
+          )) &&
+          (!(existing().paymentStatus == 'REJECTED') || (
+            incoming().paymentStatus == 'REJECTED' &&
+            incoming().bookingStatus == 'CANCELLED' &&
+            incoming().status == 'CANCELLED'
+          )) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'bookingId',
+            'bookingReference',
+            'paymentId',
+            'paymentAmount',
+            'paymentStatus',
+            'bookingStatus',
+            'status',
+            'confirmedAt',
+            'approvedAt',
+            'rejectedAt',
+            'pickupDeadline',
+            'createdAtServer',
+            'confirmedAtServer',
+            'approvedAtServer',
+            'rejectedAtServer'
+          ])
+        )
+      );
       allow delete: if isValidId(bookingId);
     }
 
     match /payments/{paymentId} {
-      allow get: if isValidId(paymentId) && existing().expectedAmount >= 1;
-      allow list: if existing().expectedAmount >= 1;
+      allow get: if isValidId(paymentId) && (existing().expectedAmount >= 1 || isAdmin());
+      allow list: if existing().expectedAmount >= 1 || isAdmin();
       allow create: if isValidId(paymentId) && isValidPayment(incoming(), paymentId) &&
         incoming().status == 'PENDING_VERIFICATION' &&
         !('verifiedAt' in incoming()) &&
+        !('approvedAt' in incoming()) &&
         !('rejectedAt' in incoming()) &&
         !('finalBookingIds' in incoming());
-      allow update: if isValidId(paymentId) && isValidPayment(incoming(), paymentId) &&
-        incoming().paymentId == existing().paymentId &&
-        incoming().customerId == existing().customerId &&
-        incoming().bookingReference == existing().bookingReference &&
-        incoming().expectedAmount == existing().expectedAmount &&
+      allow update: if isValidId(paymentId) && isValidPayment(incoming(), paymentId) && (
         (
-          (existing().status == 'PENDING_VERIFICATION' && incoming().status in ['APPROVED', 'VERIFIED']) ||
-          (existing().status == 'PENDING_VERIFICATION' && incoming().status == 'REJECTED') ||
+          isAdmin() &&
+          (!(existing().status in ['APPROVED', 'VERIFIED']) || incoming().status in ['APPROVED', 'VERIFIED']) &&
+          (!(existing().status == 'REJECTED') || incoming().status == 'REJECTED')
+        ) ||
+        (
+          incoming().paymentId == existing().paymentId &&
+          incoming().customerId == existing().customerId &&
+          incoming().bookingReference == existing().bookingReference &&
+          incoming().expectedAmount == existing().expectedAmount &&
           (
-            existing().status in ['APPROVED', 'VERIFIED'] &&
-            incoming().status in ['APPROVED', 'VERIFIED'] &&
-            incoming().screenshotDeleted == true &&
-            incoming().screenshotURL == '' &&
-            incoming().finalBookingIds == existing().finalBookingIds &&
-            incoming().verifiedAt == existing().verifiedAt
-          ) ||
-          (
-            existing().status == 'REJECTED' &&
-            incoming().status == 'REJECTED' &&
-            incoming().screenshotDeleted == true &&
-            incoming().screenshotURL == '' &&
-            incoming().rejectedAt == existing().rejectedAt
-          )
-        ) &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'status',
-          'verifiedAt',
-          'rejectedAt',
-          'deletedAt',
-          'screenshotDeleted',
-          'screenshotDeletedAt',
-          'finalBookingIds',
-          'screenshotStoragePath',
-          'screenshotURL',
-          'screenshotFileName',
-          'originalSizeKB',
-          'compressedSizeKB',
-          'submittedAt',
-          'createdAt'
-        ]);
+            (existing().status == 'PENDING_VERIFICATION' && incoming().status in ['APPROVED', 'VERIFIED']) ||
+            (existing().status == 'PENDING_VERIFICATION' && incoming().status == 'REJECTED') ||
+            (
+              existing().status in ['APPROVED', 'VERIFIED'] &&
+              incoming().status in ['APPROVED', 'VERIFIED'] &&
+              incoming().screenshotDeleted == true &&
+              incoming().screenshotURL == '' &&
+              incoming().finalBookingIds == existing().finalBookingIds &&
+              incoming().verifiedAt == existing().verifiedAt
+            ) ||
+            (
+              existing().status == 'REJECTED' &&
+              incoming().status == 'REJECTED' &&
+              incoming().screenshotDeleted == true &&
+              incoming().screenshotURL == '' &&
+              incoming().rejectedAt == existing().rejectedAt
+            )
+          ) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status',
+            'verifiedAt',
+            'approvedAt',
+            'rejectedAt',
+            'deletedAt',
+            'screenshotDeleted',
+            'screenshotDeletedAt',
+            'finalBookingIds',
+            'screenshotStoragePath',
+            'screenshotURL',
+            'screenshotFileName',
+            'originalSizeKB',
+            'compressedSizeKB',
+            'submittedAt',
+            'createdAt',
+            'submittedAtServer',
+            'verifiedAtServer',
+            'approvedAtServer',
+            'rejectedAtServer'
+          ])
+        )
+      );
       allow delete: if isValidId(paymentId) && isAdmin();
     }
 

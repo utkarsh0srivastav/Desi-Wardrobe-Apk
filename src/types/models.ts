@@ -160,6 +160,7 @@ export interface CartItem {
 }
 
 export interface Booking {
+  documentId?: string; // Firestore document ID (bookingReference)
   bookingId: string; // Temporary reference until Admin approves payment; DW-YYYYMMDD-XXXXXX after approval
   bookingReference?: string;
   paymentId?: string;
@@ -183,6 +184,8 @@ export interface Booking {
   status: BookingStatus;
   createdAt: string;
   confirmedAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
   pickupDeadline: string;
 }
 
@@ -212,6 +215,7 @@ export interface PaymentRecord {
   submittedAt: string;
   createdAt?: string;
   verifiedAt?: string;
+  approvedAt?: string;
   rejectedAt?: string;
   deletedAt?: string;
   screenshotDeleted?: boolean;

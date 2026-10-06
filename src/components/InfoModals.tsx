@@ -10,9 +10,10 @@ import {
   Shield,
   Info,
   Globe,
+  Mail,
 } from 'lucide-react';
 import { ThemeMode } from '../types/models';
-import { AppLanguage } from '../utils/i18n';
+import { AppLanguage, translations } from '../utils/i18n';
 
 export type ActiveModalType =
   | 'SETTINGS'
@@ -257,7 +258,7 @@ export const InfoModals: React.FC<InfoModalsProps> = ({
           )}
 
           {activeModal === 'HELP' && (
-            <div className="space-y-3 text-xs text-[var(--text-primary)]">
+            <div className="space-y-4 text-xs text-[var(--text-primary)]">
               <div className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-2">
                 <div className="font-bold text-sm">How Desi Wardrobe Booking Works</div>
                 <p className="text-[var(--text-secondary)]">
@@ -272,6 +273,22 @@ export const InfoModals: React.FC<InfoModalsProps> = ({
                 <p className="text-[var(--text-secondary)]">
                   4. Once verified, visit the shop within 48 hours with your Booking ID to inspect and complete your purchase.
                 </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[var(--accent-soft)]/50 border border-[var(--accent-primary)]/30 space-y-2.5">
+                <div className="font-display text-base font-bold text-[var(--text-primary)]">
+                  {translations[language].needHelpOrSupport}
+                </div>
+                <div className="text-xs text-[var(--text-secondary)]">
+                  {translations[language].contactUsAt}
+                </div>
+                <a
+                  href="mailto:desiwardrobe07@gmail.com?subject=Desi%20Wardrobe%20Support"
+                  className="inline-flex items-center gap-2.5 min-h-[44px] w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] border border-[var(--accent-primary)]/40 text-[var(--accent-primary)] font-semibold text-xs sm:text-sm shadow-2xs transition-colors"
+                >
+                  <Mail className="w-4 h-4 shrink-0" />
+                  <span className="underline underline-offset-4">desiwardrobe07@gmail.com</span>
+                </a>
               </div>
             </div>
           )}

@@ -139,7 +139,7 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
                 : isExpired
                   ? 'RESERVATION EXPIRED'
                   : isApproved
-                    ? 'PAYMENT VERIFIED'
+                    ? 'PAYMENT APPROVED'
                     : isRejected
                       ? 'PAYMENT REJECTED'
                       : 'PAYMENT UNDER VERIFICATION'}
@@ -153,7 +153,7 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
                 : isExpired
                   ? 'BOOKING EXPIRED'
                   : isApproved
-                    ? 'BOOKING SUCCESSFUL'
+                    ? 'BOOKING CONFIRMED'
                     : isRejected
                       ? 'BOOKING CANCELLED'
                       : 'BOOKING PENDING CONFIRMATION'}
@@ -167,7 +167,7 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
                 : isExpired
                   ? 'The 48-hour shop pickup window for this booking has expired.'
                   : isApproved
-                    ? 'Your payment has been verified and your booking is confirmed. Please visit the shop within 48 hours to complete your purchase.'
+                    ? 'Your payment has been approved and your booking is confirmed. Please visit the shop within 48 hours to complete your purchase.'
                     : isRejected
                       ? 'Your payment screenshot could not be verified by Admin. This booking has been cancelled.'
                       : 'Your payment screenshot has been submitted. Your booking will be confirmed once verified by Admin.'}
@@ -181,7 +181,7 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
               Confirmed Booking ID
             </div>
             <div className="font-mono-tabular text-xl sm:text-2xl font-bold text-[var(--text-primary)] mt-0.5">
-              {primary.bookingId}
+              Booking ID: {primary.bookingId}
             </div>
           </div>
         )}
@@ -211,18 +211,33 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
           </div>
         </div>
 
-        {/* 48-Hour Pickup Deadline Notice (Only for active confirmed bookings) */}
+        {/* 48-Hour Pickup Deadline & Confirmed Date Notice (Only for active confirmed bookings) */}
         {isApproved && !isSold && !isNotSold && !isExpired && (
-          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center gap-2.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
-            <Clock className="w-4 h-4 shrink-0" />
-            <span>
-              Pickup Deadline:{' '}
-              {new Date(primary.pickupDeadline).toLocaleString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs font-semibold text-amber-700 dark:text-amber-300">
+            {primary.confirmedAt && (
+              <span>
+                Confirmed Date:{' '}
+                {new Date(primary.confirmedAt).toLocaleString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4 shrink-0" />
+              <span>
+                Pickup Deadline (48 Hours):{' '}
+                {new Date(primary.pickupDeadline).toLocaleString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
             </span>
           </div>
         )}

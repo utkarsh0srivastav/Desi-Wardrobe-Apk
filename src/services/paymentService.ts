@@ -1,10 +1,11 @@
 import {
   collection,
-  deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   query,
   runTransaction,
+  serverTimestamp,
   setDoc,
   where,
 } from 'firebase/firestore';
@@ -20,6 +21,7 @@ import {
 import { storage } from '../utils/storage';
 import {
   generateFinalDesiWardrobeBookingId,
+  getBookingFirestoreDocId,
   persistBookingToFirestore,
   sanitizeBookingForFirestore,
 } from './bookingService';
@@ -41,10 +43,11 @@ import { storageService, UploadedPaymentProof } from './storageService';
  */
 
 const inFlightSubmissions = new Set<string>();
+const inFlightApprovals = new Set<string>();
 
 function assertAuthorizedAdminForPaymentAction(): void {
   const activeAdmin = storage.getActiveAdminSession();
-  if (!activeAdmin) {
+  if (!activeAdmin || !activeAdmin.pinVerified) {
     throw new Error(
       'Access denied. Only the authorized Admin can approve, reject, or delete payment proofs.'
     );
@@ -85,10 +88,10 @@ export function sanitizePaymentForFirestore(payment: PaymentRecord): PaymentReco
     clean.screenshotFileName = payment.screenshotFileName.slice(0, 200);
   }
   if (typeof payment.originalSizeKB === 'number' && Number.isFinite(payment.originalSizeKB)) {
-    clean.originalSizeKB = Math.max(0, Math.round(payment.originalSizeKB));
+    clean.originalSizeKB = Math.max(0, payment.originalSizeKB);
   }
   if (typeof payment.compressedSizeKB === 'number' && Number.isFinite(payment.compressedSizeKB)) {
-    clean.compressedSizeKB = Math.max(0, Math.round(payment.compressedSizeKB));
+    clean.compressedSizeKB = Math.max(0, payment.compressedSizeKB);
   }
   if (payment.createdAt) {
     clean.createdAt = payment.createdAt;
@@ -98,6 +101,9 @@ export function sanitizePaymentForFirestore(payment: PaymentRecord): PaymentReco
   }
   if (payment.verifiedAt) {
     clean.verifiedAt = payment.verifiedAt;
+  }
+  if (payment.approvedAt) {
+    clean.approvedAt = payment.approvedAt;
   }
   if (payment.rejectedAt) {
     clean.rejectedAt = payment.rejectedAt;
@@ -111,6 +117,18 @@ export function sanitizePaymentForFirestore(payment: PaymentRecord): PaymentReco
   if (payment.screenshotDeletedAt) {
     clean.screenshotDeletedAt = payment.screenshotDeletedAt;
   }
+  const rawRecord = payment as unknown as Record<string, unknown>;
+  const cleanRecord = clean as unknown as Record<string, unknown>;
+  for (const serverKey of [
+    'submittedAtServer',
+    'verifiedAtServer',
+    'approvedAtServer',
+    'rejectedAtServer',
+  ]) {
+    if (rawRecord[serverKey] !== undefined) {
+      cleanRecord[serverKey] = rawRecord[serverKey];
+    }
+  }
   return clean;
 }
 
@@ -121,7 +139,11 @@ export async function persistPaymentToFirestore(
   const path = `payments/${payment.paymentId}`;
   try {
     const clean = sanitizePaymentForFirestore(payment);
-    await setDoc(doc(db, 'payments', payment.paymentId), clean);
+    const payload: Record<string, unknown> = { ...clean };
+    if (op === OperationType.CREATE) {
+      payload.submittedAtServer = serverTimestamp();
+    }
+    await setDoc(doc(db, 'payments', payment.paymentId), payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, op, path);
   }
@@ -212,13 +234,11 @@ export const paymentService = {
       { includeMetadataChanges: true },
       (snapshot) => {
         const remotePayments: PaymentRecord[] = [];
-        const remoteIds = new Set<string>();
 
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as PaymentRecord;
           if (data && data.paymentId) {
             remotePayments.push(data);
-            remoteIds.add(data.paymentId);
           }
         });
 
@@ -324,19 +344,23 @@ export const paymentService = {
 
       if (existingPendingForRef.length > 0) {
         for (const existingB of existingPendingForRef) {
+          const docId = getBookingFirestoreDocId(existingB);
           const updatedB: Booking = {
             ...existingB,
+            documentId: docId,
             paymentId,
             paymentStatus: 'PENDING_VERIFICATION',
             bookingStatus: 'PAYMENT_PENDING',
             status: 'PAYMENT_PENDING',
           };
-          const bIdx = existingBookings.findIndex((x) => x.bookingId === existingB.bookingId);
+          const bIdx = existingBookings.findIndex(
+            (x) => getBookingFirestoreDocId(x) === docId || x.bookingId === existingB.bookingId
+          );
           if (bIdx !== -1) {
             existingBookings[bIdx] = updatedB;
           }
           createdOrUpdatedBookings.push(updatedB);
-          bookingIds.push(updatedB.bookingId);
+          bookingIds.push(docId);
           await persistBookingToFirestore(updatedB, OperationType.UPDATE);
         }
       } else {
@@ -345,14 +369,15 @@ export const paymentService = {
           const item = draft.items[i];
           inventoryService.reserveProductStock(item.productId, item.quantity);
 
-          const tempBookingId =
+          const bookingDocId =
             draft.items.length === 1
               ? draft.bookingReference
               : `${draft.bookingReference}-${i + 1}`;
 
           const newBooking: Booking = {
-            bookingId: tempBookingId,
-            bookingReference: draft.bookingReference,
+            documentId: bookingDocId,
+            bookingId: bookingDocId,
+            bookingReference: bookingDocId,
             paymentId,
             customerId: draft.customerId,
             shopId: item.shopId,
@@ -377,7 +402,7 @@ export const paymentService = {
           };
 
           createdOrUpdatedBookings.push(newBooking);
-          bookingIds.push(newBooking.bookingId);
+          bookingIds.push(bookingDocId);
           existingBookings.unshift(newBooking);
           await persistBookingToFirestore(newBooking, OperationType.CREATE);
         }
@@ -444,13 +469,17 @@ export const paymentService = {
   },
 
   /**
-   * Admin Action: APPROVE PAYMENT (Section 2, 11, 16, 17, 22)
-   * - Allowed ONLY when payment is PENDING_VERIFICATION
-   * - REJECTED payments can NEVER be approved
-   * - Sets payment.status = "APPROVED" and booking.paymentStatus = "APPROVED"
-   * - Sets booking.bookingStatus = "CONFIRMED"
-   * - Generates the final Booking ID (DW-YYYYMMDD-XXXXXX) if not already generated
-   * - Uses Firestore transaction for atomic state transition
+   * Admin Action: APPROVE PAYMENT (Atomic, Idempotent Firestore Transaction)
+   *
+   * 1. Reads payment document directly inside a Firestore transaction.
+   * 2. If already APPROVED, returns existing confirmed booking(s) & Booking ID without generating a duplicate ID.
+   * 3. Verifies payment.status == "PENDING_VERIFICATION" (rejects if REJECTED).
+   * 4. Reads the exact associated booking document(s) in Firestore (`bookings/{bookingReference}`).
+   * 5. Generates `DW-YYYYMMDD-XXXXXX` Booking ID ONLY if not already present on the booking.
+   * 6. Updates the SAME booking document in place (`bookingStatus = "CONFIRMED"`, `paymentStatus = "APPROVED"`,
+   *    `bookingId = generatedBookingId`, `confirmedAt`, `pickupDeadline = confirmedAt + 48 hours`).
+   * 7. Updates payment document (`status = "APPROVED"`, `verifiedAt`, `finalBookingIds`).
+   * 8. Updates local cache ONLY after the Firestore transaction commits.
    */
   approvePaymentByAdmin: async (paymentId: string): Promise<{
     payment: PaymentRecord;
@@ -458,245 +487,415 @@ export const paymentService = {
   }> => {
     assertAuthorizedAdminForPaymentAction();
 
-    const payments = storage.getPayments();
-    const pIdx = payments.findIndex((p) => p.paymentId === paymentId);
-    if (pIdx === -1) {
-      throw new Error('Payment record not found.');
+    if (inFlightApprovals.has(paymentId)) {
+      throw new Error('Payment approval is already in progress. Please wait.');
     }
+    inFlightApprovals.add(paymentId);
 
-    const localPayment = payments[pIdx];
-    if (isPaymentRejectedStatus(localPayment.status)) {
-      throw new Error(
-        'This payment has already been REJECTED. Once rejected, a payment is final and cannot be approved.'
-      );
-    }
-    if (isPaymentApprovedStatus(localPayment.status)) {
-      throw new Error('This payment has already been APPROVED.');
-    }
+    try {
+      const localBookings = storage.getBookings();
+      const existingIds = new Set<string>(localBookings.map((b) => b.bookingId));
 
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const pickupHours = appConfig.getPickupHours();
-    const confirmedDeadline = new Date(
-      now.getTime() + pickupHours * 60 * 60 * 1000
-    ).toISOString();
-
-    const bookings = storage.getBookings();
-    const existingIds = new Set(bookings.map((b) => b.bookingId));
-    const finalBookingIds: string[] = [];
-    const confirmedBookings: Booking[] = [];
-    const oldTempIdsToDelete: string[] = [];
-
-    for (let i = 0; i < bookings.length; i++) {
-      const b = bookings[i];
-      const matchesPayment =
-        b.paymentId === localPayment.paymentId ||
-        localPayment.bookingIds.includes(b.bookingId) ||
-        (b.bookingReference && b.bookingReference === localPayment.bookingReference);
-
-      if (matchesPayment) {
-        const oldBookingId = b.bookingId;
-        const isAlreadyFinalDwId = /^DW-\d{8}-[A-Z0-9]{6}$/.test(oldBookingId);
-        const finalBookingId = isAlreadyFinalDwId
-          ? oldBookingId
-          : generateFinalDesiWardrobeBookingId(existingIds);
-        existingIds.add(finalBookingId);
-        finalBookingIds.push(finalBookingId);
-
-        const confirmedBooking: Booking = {
-          ...b,
-          bookingId: finalBookingId,
-          bookingReference: b.bookingReference || oldBookingId,
-          paymentId: localPayment.paymentId,
-          paymentStatus: 'APPROVED',
-          bookingStatus: 'CONFIRMED',
-          status: 'CONFIRMED',
-          confirmedAt: nowIso,
-          pickupDeadline: confirmedDeadline,
-        };
-
-        bookings[i] = confirmedBooking;
-        confirmedBookings.push(confirmedBooking);
-        if (oldBookingId !== finalBookingId) {
-          oldTempIdsToDelete.push(oldBookingId);
+      // Discover any associated booking document IDs from Firestore in case bookingIds array only had bookingReference
+      const localPaymentHint = storage.getPayments().find((p) => p.paymentId === paymentId);
+      const candidateBookingDocIds = new Set<string>();
+      if (localPaymentHint) {
+        for (const id of localPaymentHint.bookingIds || []) {
+          if (id) candidateBookingDocIds.add(id);
+        }
+        if (localPaymentHint.bookingReference) {
+          candidateBookingDocIds.add(localPaymentHint.bookingReference);
         }
       }
-    }
+      for (const b of localBookings) {
+        if (
+          b.paymentId === paymentId ||
+          (localPaymentHint && b.bookingReference === localPaymentHint.bookingReference)
+        ) {
+          candidateBookingDocIds.add(getBookingFirestoreDocId(b));
+        }
+      }
 
-    const updatedPayment: PaymentRecord = {
-      ...localPayment,
-      status: 'APPROVED',
-      verifiedAt: nowIso,
-      finalBookingIds,
-    };
+      if (candidateBookingDocIds.size === 0) {
+        try {
+          const q = query(
+            collection(db, 'bookings'),
+            where('paymentId', '==', paymentId),
+            where('quantity', '>=', 1)
+          );
+          const snap = await getDocs(q);
+          snap.forEach((d) => candidateBookingDocIds.add(d.id));
+        } catch {
+          // Proceed with transaction read of payment document
+        }
+      }
 
-    // Execute atomic Firestore transaction verifying current remote state is PENDING_VERIFICATION
-    const paymentRef = doc(db, 'payments', paymentId);
-    try {
+      const paymentRef = doc(db, 'payments', paymentId);
+      let committedPayment!: PaymentRecord;
+      let committedBookings: Booking[] = [];
+
       await runTransaction(db, async (transaction) => {
         const paymentSnap = await transaction.get(paymentRef);
-        if (paymentSnap.exists()) {
-          const remoteData = paymentSnap.data() as PaymentRecord;
-          if (isPaymentRejectedStatus(remoteData.status)) {
-            throw new Error(
-              'This payment has already been REJECTED. Once rejected, a payment is final and cannot be approved.'
-            );
+        if (!paymentSnap.exists()) {
+          throw new Error('Payment record not found in database.');
+        }
+
+        const remotePayment = paymentSnap.data() as PaymentRecord;
+        if (isPaymentRejectedStatus(remotePayment.status)) {
+          throw new Error(
+            'This payment has already been REJECTED. Once rejected, a payment is final and cannot be approved.'
+          );
+        }
+
+        const docIdsToRead = new Set<string>(candidateBookingDocIds);
+        for (const id of remotePayment.bookingIds || []) {
+          if (id) docIdsToRead.add(id);
+        }
+        if (remotePayment.bookingReference) {
+          docIdsToRead.add(remotePayment.bookingReference);
+        }
+
+        const bookingSnaps = await Promise.all(
+          Array.from(docIdsToRead).map((docId) => transaction.get(doc(db, 'bookings', docId)))
+        );
+
+        // Idempotency: If payment is already APPROVED and bookings are already CONFIRMED with DW-* ID, return existing state
+        if (
+          isPaymentApprovedStatus(remotePayment.status) &&
+          remotePayment.finalBookingIds &&
+          remotePayment.finalBookingIds.length > 0
+        ) {
+          const existingConfirmed: Booking[] = [];
+          for (const bSnap of bookingSnaps) {
+            if (bSnap.exists()) {
+              const bData = bSnap.data() as Booking;
+              existingConfirmed.push({
+                ...bData,
+                documentId: bSnap.id,
+              });
+            }
           }
-          if (isPaymentApprovedStatus(remoteData.status)) {
-            throw new Error('This payment has already been APPROVED.');
+          if (existingConfirmed.length > 0) {
+            committedPayment = remotePayment;
+            committedBookings = existingConfirmed;
+            return;
           }
         }
 
-        transaction.set(paymentRef, sanitizePaymentForFirestore(updatedPayment));
-        for (const cb of confirmedBookings) {
-          const cbRef = doc(db, 'bookings', cb.bookingId);
-          transaction.set(cbRef, sanitizeBookingForFirestore(cb));
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const pickupHours = appConfig.getPickupHours(); // 48 hours
+        const confirmedDeadline = new Date(
+          now.getTime() + pickupHours * 60 * 60 * 1000
+        ).toISOString();
+
+        const txConfirmedBookings: Booking[] = [];
+        const txFinalBookingIds: string[] = [];
+
+        for (let idx = 0; idx < bookingSnaps.length; idx++) {
+          const bSnap = bookingSnaps[idx];
+          if (!bSnap.exists()) continue;
+
+          const bData = bSnap.data() as Booking;
+          const docId = bSnap.id;
+
+          if (
+            bData.paymentStatus === 'REJECTED' ||
+            bData.bookingStatus === 'CANCELLED' ||
+            bData.status === 'CANCELLED'
+          ) {
+            throw new Error('Cannot approve a booking that has already been cancelled.');
+          }
+
+          // Preserve existing DW-YYYYMMDD-XXXXXX Booking ID if already generated; otherwise generate once
+          const existingDwId =
+            /^DW-\d{8}-[A-Z0-9]{6}$/.test(bData.bookingId)
+              ? bData.bookingId
+              : remotePayment.finalBookingIds?.[idx] &&
+                  /^DW-\d{8}-[A-Z0-9]{6}$/.test(remotePayment.finalBookingIds[idx])
+                ? remotePayment.finalBookingIds[idx]
+                : null;
+
+          const finalBookingId =
+            existingDwId || generateFinalDesiWardrobeBookingId(existingIds);
+          existingIds.add(finalBookingId);
+          txFinalBookingIds.push(finalBookingId);
+
+          const confirmedAtIso = bData.confirmedAt || bData.approvedAt || nowIso;
+          const deadlineIso = bData.confirmedAt
+            ? bData.pickupDeadline
+            : confirmedDeadline;
+
+          const updatedBooking: Booking = {
+            ...bData,
+            documentId: docId,
+            bookingId: finalBookingId,
+            bookingReference: bData.bookingReference || docId,
+            paymentId: remotePayment.paymentId,
+            paymentStatus: 'APPROVED',
+            bookingStatus: 'CONFIRMED',
+            status: 'CONFIRMED',
+            confirmedAt: confirmedAtIso,
+            approvedAt: confirmedAtIso,
+            pickupDeadline: deadlineIso,
+          };
+
+          txConfirmedBookings.push(updatedBooking);
+
+          // Update the EXACT SAME booking document in place so Customer & Shopkeeper listeners update immediately
+          const cleanBooking = sanitizeBookingForFirestore(updatedBooking);
+          transaction.set(
+            doc(db, 'bookings', docId),
+            {
+              ...cleanBooking,
+              confirmedAtServer: serverTimestamp(),
+              approvedAtServer: serverTimestamp(),
+            },
+            { merge: true }
+          );
         }
+
+        if (txConfirmedBookings.length === 0) {
+          throw new Error('Associated booking record not found for this payment.');
+        }
+
+        const verifiedAtIso = remotePayment.verifiedAt || remotePayment.approvedAt || nowIso;
+        const updatedPayment: PaymentRecord = {
+          ...remotePayment,
+          status: 'APPROVED',
+          verifiedAt: verifiedAtIso,
+          approvedAt: verifiedAtIso,
+          finalBookingIds: txFinalBookingIds,
+        };
+
+        const cleanPayment = sanitizePaymentForFirestore(updatedPayment);
+        transaction.set(
+          paymentRef,
+          {
+            ...cleanPayment,
+            verifiedAtServer: serverTimestamp(),
+            approvedAtServer: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        committedPayment = updatedPayment;
+        committedBookings = txConfirmedBookings;
       });
+
+      // Update local storage cache ONLY after Firestore transaction has succeeded
+      const updatedLocalBookings = [...storage.getBookings()];
+      for (const cb of committedBookings) {
+        const docId = getBookingFirestoreDocId(cb);
+        const idx = updatedLocalBookings.findIndex(
+          (b) =>
+            getBookingFirestoreDocId(b) === docId ||
+            b.bookingReference === cb.bookingReference ||
+            b.bookingId === cb.bookingId
+        );
+        if (idx !== -1) {
+          updatedLocalBookings[idx] = cb;
+        } else {
+          updatedLocalBookings.unshift(cb);
+        }
+      }
+      storage.saveBookings(updatedLocalBookings);
+
+      const updatedLocalPayments = [...storage.getPayments()];
+      const pIdx = updatedLocalPayments.findIndex((p) => p.paymentId === paymentId);
+      if (pIdx !== -1) {
+        updatedLocalPayments[pIdx] = committedPayment;
+      } else {
+        updatedLocalPayments.unshift(committedPayment);
+      }
+      storage.savePayments(updatedLocalPayments);
+
+      return {
+        payment: committedPayment,
+        confirmedBookings: committedBookings,
+      };
     } catch (error) {
       if (
         error instanceof Error &&
         (error.message.includes('already been REJECTED') ||
-          error.message.includes('already been APPROVED'))
+          error.message.includes('already been APPROVED') ||
+          error.message.includes('already in progress') ||
+          error.message.includes('not found'))
       ) {
         throw error;
       }
       handleFirestoreError(error, OperationType.UPDATE, `payments/${paymentId}`);
+    } finally {
+      inFlightApprovals.delete(paymentId);
     }
-
-    for (const oldId of oldTempIdsToDelete) {
-      try {
-        await deleteDoc(doc(db, 'bookings', oldId));
-      } catch {
-        // Ignore if old temporary doc was already replaced
-      }
-    }
-
-    storage.saveBookings(bookings);
-    payments[pIdx] = updatedPayment;
-    storage.savePayments(payments);
-
-    return {
-      payment: updatedPayment,
-      confirmedBookings,
-    };
   },
 
   /**
-   * Admin Action: REJECT PAYMENT (Section 3, 11, 16, 22)
+   * Admin Action: REJECT PAYMENT (Atomic Firestore Transaction)
    * - Allowed ONLY when payment is PENDING_VERIFICATION
    * - APPROVED payments can NEVER be rejected
    * - Sets payment.status = "REJECTED" and booking.paymentStatus = "REJECTED"
    * - Sets booking.bookingStatus = "CANCELLED" and booking.status = "CANCELLED"
-   * - Releases reserved stock and uses Firestore transaction for atomic state transition
+   * - Releases reserved stock and updates the exact same booking document in place
    */
   rejectPaymentByAdmin: async (paymentId: string): Promise<PaymentRecord> => {
     assertAuthorizedAdminForPaymentAction();
 
-    const payments = storage.getPayments();
-    const pIdx = payments.findIndex((p) => p.paymentId === paymentId);
-    if (pIdx === -1) {
-      throw new Error('Payment record not found.');
+    const localBookings = storage.getBookings();
+    const localPaymentHint = storage.getPayments().find((p) => p.paymentId === paymentId);
+    const candidateBookingDocIds = new Set<string>();
+    if (localPaymentHint) {
+      for (const id of localPaymentHint.bookingIds || []) {
+        if (id) candidateBookingDocIds.add(id);
+      }
+      if (localPaymentHint.bookingReference) {
+        candidateBookingDocIds.add(localPaymentHint.bookingReference);
+      }
     }
-
-    const localPayment = payments[pIdx];
-    if (isPaymentApprovedStatus(localPayment.status)) {
-      throw new Error(
-        'This payment has already been APPROVED. Once approved, a payment is final and cannot be rejected.'
-      );
-    }
-    if (isPaymentRejectedStatus(localPayment.status)) {
-      throw new Error('This payment has already been REJECTED.');
-    }
-
-    const nowIso = new Date().toISOString();
-    const bookings = storage.getBookings();
-    const cancelledBookings: Booking[] = [];
-
-    for (let i = 0; i < bookings.length; i++) {
-      const b = bookings[i];
-      const matchesPayment =
-        b.paymentId === localPayment.paymentId ||
-        localPayment.bookingIds.includes(b.bookingId) ||
-        (b.bookingReference && b.bookingReference === localPayment.bookingReference);
-
-      if (matchesPayment) {
-        if (b.status !== 'CANCELLED' && b.bookingStatus !== 'CANCELLED') {
-          inventoryService.releaseStockOnNotSold(b.productId, b.quantity, false);
-        }
-        const cancelledBooking: Booking = {
-          ...b,
-          paymentStatus: 'REJECTED',
-          bookingStatus: 'CANCELLED',
-          status: 'CANCELLED',
-        };
-        bookings[i] = cancelledBooking;
-        cancelledBookings.push(cancelledBooking);
+    for (const b of localBookings) {
+      if (
+        b.paymentId === paymentId ||
+        (localPaymentHint && b.bookingReference === localPaymentHint.bookingReference)
+      ) {
+        candidateBookingDocIds.add(getBookingFirestoreDocId(b));
       }
     }
 
-    const updatedPayment: PaymentRecord = {
-      ...localPayment,
-      status: 'REJECTED',
-      rejectedAt: nowIso,
-    };
-
     const paymentRef = doc(db, 'payments', paymentId);
+    let committedPayment!: PaymentRecord;
+    let committedBookings: Booking[] = [];
+
     try {
       await runTransaction(db, async (transaction) => {
         const paymentSnap = await transaction.get(paymentRef);
-        if (paymentSnap.exists()) {
-          const remoteData = paymentSnap.data() as PaymentRecord;
-          if (isPaymentApprovedStatus(remoteData.status)) {
-            throw new Error(
-              'This payment has already been APPROVED. Once approved, a payment is final and cannot be rejected.'
-            );
-          }
-          if (isPaymentRejectedStatus(remoteData.status)) {
-            throw new Error('This payment has already been REJECTED.');
-          }
+        if (!paymentSnap.exists()) {
+          throw new Error('Payment record not found in database.');
         }
 
-        transaction.set(paymentRef, sanitizePaymentForFirestore(updatedPayment));
-        for (const cb of cancelledBookings) {
-          const cbRef = doc(db, 'bookings', cb.bookingId);
-          transaction.set(cbRef, sanitizeBookingForFirestore(cb));
+        const remotePayment = paymentSnap.data() as PaymentRecord;
+        if (isPaymentApprovedStatus(remotePayment.status)) {
+          throw new Error(
+            'This payment has already been APPROVED. Once approved, a payment is final and cannot be rejected.'
+          );
         }
+        if (isPaymentRejectedStatus(remotePayment.status)) {
+          throw new Error('This payment has already been REJECTED.');
+        }
+
+        const docIdsToRead = new Set<string>(candidateBookingDocIds);
+        for (const id of remotePayment.bookingIds || []) {
+          if (id) docIdsToRead.add(id);
+        }
+        if (remotePayment.bookingReference) {
+          docIdsToRead.add(remotePayment.bookingReference);
+        }
+
+        const bookingSnaps = await Promise.all(
+          Array.from(docIdsToRead).map((docId) => transaction.get(doc(db, 'bookings', docId)))
+        );
+
+        const nowIso = new Date().toISOString();
+        const txCancelledBookings: Booking[] = [];
+
+        for (const bSnap of bookingSnaps) {
+          if (!bSnap.exists()) continue;
+          const bData = bSnap.data() as Booking;
+          const docId = bSnap.id;
+
+          const cancelledBooking: Booking = {
+            ...bData,
+            documentId: docId,
+            paymentStatus: 'REJECTED',
+            bookingStatus: 'CANCELLED',
+            status: 'CANCELLED',
+            rejectedAt: nowIso,
+          };
+          txCancelledBookings.push(cancelledBooking);
+
+          const cleanBooking = sanitizeBookingForFirestore(cancelledBooking);
+          transaction.set(
+            doc(db, 'bookings', docId),
+            {
+              ...cleanBooking,
+              rejectedAtServer: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+
+        const updatedPayment: PaymentRecord = {
+          ...remotePayment,
+          status: 'REJECTED',
+          rejectedAt: nowIso,
+        };
+
+        const cleanPayment = sanitizePaymentForFirestore(updatedPayment);
+        transaction.set(
+          paymentRef,
+          {
+            ...cleanPayment,
+            rejectedAtServer: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        committedPayment = updatedPayment;
+        committedBookings = txCancelledBookings;
       });
     } catch (error) {
       if (
         error instanceof Error &&
         (error.message.includes('already been APPROVED') ||
-          error.message.includes('already been REJECTED'))
+          error.message.includes('already been REJECTED') ||
+          error.message.includes('not found'))
       ) {
         throw error;
       }
       handleFirestoreError(error, OperationType.UPDATE, `payments/${paymentId}`);
     }
 
-    storage.saveBookings(bookings);
-    payments[pIdx] = updatedPayment;
-    storage.savePayments(payments);
+    // Release reserved stock after transaction commits
+    for (const cb of committedBookings) {
+      inventoryService.releaseStockOnNotSold(cb.productId, cb.quantity, false);
+    }
 
-    return updatedPayment;
+    const updatedLocalBookings = [...storage.getBookings()];
+    for (const cb of committedBookings) {
+      const docId = getBookingFirestoreDocId(cb);
+      const idx = updatedLocalBookings.findIndex(
+        (b) =>
+          getBookingFirestoreDocId(b) === docId ||
+          b.bookingReference === cb.bookingReference ||
+          b.bookingId === cb.bookingId
+      );
+      if (idx !== -1) {
+        updatedLocalBookings[idx] = cb;
+      }
+    }
+    storage.saveBookings(updatedLocalBookings);
+
+    const updatedLocalPayments = [...storage.getPayments()];
+    const pIdx = updatedLocalPayments.findIndex((p) => p.paymentId === paymentId);
+    if (pIdx !== -1) {
+      updatedLocalPayments[pIdx] = committedPayment;
+    }
+    storage.savePayments(updatedLocalPayments);
+
+    return committedPayment;
   },
 
   /**
-   * Admin Action: DELETE PAYMENT PROOF (Sections 4, 5, 6, 7, 8, 13, 14, 15, 18, 19, 20, 22)
+   * Admin Action: DELETE PAYMENT PROOF
    *
-   * Behavior depends strictly on current payment status:
    * 1. PENDING_VERIFICATION + DELETE:
-   *    - Automatically sets paymentStatus = REJECTED, bookingStatus = CANCELLED, rejectedAt = timestamp
+   *    - Sets paymentStatus = REJECTED, bookingStatus = CANCELLED, rejectedAt = serverTimestamp()
    *    - Deletes screenshot file from Firebase Storage
-   *    - Customer sees PAYMENT REJECTED / BOOKING CANCELLED
    * 2. APPROVED + DELETE SCREENSHOT:
    *    - Deletes screenshot file from Firebase Storage ONLY
-   *    - Keeps payment.status = APPROVED, booking.paymentStatus = APPROVED, booking.bookingStatus = CONFIRMED, and Booking ID unchanged!
-   *    - Customer continues to see PAYMENT VERIFIED / BOOKING SUCCESSFUL + Booking ID
+   *    - Keeps payment.status = APPROVED, booking.paymentStatus = APPROVED, booking.bookingStatus = CONFIRMED, and Booking ID unchanged
    * 3. REJECTED + DELETE SCREENSHOT:
    *    - Deletes screenshot file from Firebase Storage ONLY
    *    - Keeps payment.status = REJECTED, booking.paymentStatus = REJECTED, booking.bookingStatus = CANCELLED
-   *    - Customer continues to see PAYMENT REJECTED / BOOKING CANCELLED
    */
   deletePaymentProofByAdmin: async (paymentId: string): Promise<PaymentRecord> => {
     assertAuthorizedAdminForPaymentAction();
@@ -710,119 +909,143 @@ export const paymentService = {
     const localPayment = payments[pIdx];
     const nowIso = new Date().toISOString();
 
-    // 1. Delete the actual uploaded screenshot file from Firebase Storage (Admin-only)
     if (localPayment.screenshotStoragePath) {
       await storageService.deletePaymentScreenshot(localPayment.screenshotStoragePath);
     }
 
-    const bookings = storage.getBookings();
-    const bookingsToUpdateInTx: Booking[] = [];
-    let updatedPayment: PaymentRecord;
-
-    if (localPayment.status === 'PENDING_VERIFICATION') {
-      // Section 4 & 15: PENDING_VERIFICATION + DELETE -> Automatically REJECTED + BOOKING CANCELLED
-      for (let i = 0; i < bookings.length; i++) {
-        const b = bookings[i];
-        const matchesPayment =
-          b.paymentId === localPayment.paymentId ||
-          localPayment.bookingIds.includes(b.bookingId) ||
-          (b.bookingReference && b.bookingReference === localPayment.bookingReference);
-
-        if (matchesPayment) {
-          if (b.status !== 'CANCELLED' && b.bookingStatus !== 'CANCELLED') {
-            inventoryService.releaseStockOnNotSold(b.productId, b.quantity, false);
-          }
-          const cancelledBooking: Booking = {
-            ...b,
-            paymentStatus: 'REJECTED',
-            bookingStatus: 'CANCELLED',
-            status: 'CANCELLED',
-          };
-          bookings[i] = cancelledBooking;
-          bookingsToUpdateInTx.push(cancelledBooking);
-        }
+    const localBookings = storage.getBookings();
+    const candidateBookingDocIds = new Set<string>();
+    for (const id of localPayment.bookingIds || []) {
+      if (id) candidateBookingDocIds.add(id);
+    }
+    if (localPayment.bookingReference) {
+      candidateBookingDocIds.add(localPayment.bookingReference);
+    }
+    for (const b of localBookings) {
+      if (
+        b.paymentId === paymentId ||
+        b.bookingReference === localPayment.bookingReference
+      ) {
+        candidateBookingDocIds.add(getBookingFirestoreDocId(b));
       }
-
-      updatedPayment = {
-        ...localPayment,
-        status: 'REJECTED',
-        rejectedAt: nowIso,
-        screenshotURL: '',
-        screenshotDeleted: true,
-        screenshotDeletedAt: nowIso,
-        deletedAt: nowIso,
-      };
-    } else if (isPaymentApprovedStatus(localPayment.status)) {
-      // Section 5 & 13: APPROVED + DELETE SCREENSHOT -> File delete ONLY!
-      // DO NOT change paymentStatus (stays APPROVED), DO NOT change bookingStatus (stays CONFIRMED), DO NOT remove Booking ID!
-      updatedPayment = {
-        ...localPayment,
-        status: 'APPROVED',
-        screenshotURL: '',
-        screenshotDeleted: true,
-        screenshotDeletedAt: nowIso,
-        deletedAt: nowIso,
-      };
-    } else {
-      // Section 6 & 14: REJECTED + DELETE SCREENSHOT -> File delete ONLY!
-      // Keep paymentStatus = REJECTED and bookingStatus = CANCELLED
-      updatedPayment = {
-        ...localPayment,
-        status: 'REJECTED',
-        screenshotURL: '',
-        screenshotDeleted: true,
-        screenshotDeletedAt: nowIso,
-        deletedAt: nowIso,
-      };
     }
 
     const paymentRef = doc(db, 'payments', paymentId);
+    let committedPayment!: PaymentRecord;
+    const cancelledBookingsInTx: Booking[] = [];
+
     try {
       await runTransaction(db, async (transaction) => {
         const paymentSnap = await transaction.get(paymentRef);
-        if (paymentSnap.exists()) {
-          const remoteData = paymentSnap.data() as PaymentRecord;
-          if (isPaymentApprovedStatus(remoteData.status)) {
-            // Preserve remote APPROVED state & finalBookingIds unconditionally
-            updatedPayment = {
-              ...remoteData,
-              status: 'APPROVED',
-              screenshotURL: '',
-              screenshotDeleted: true,
-              screenshotDeletedAt: nowIso,
-              deletedAt: nowIso,
-            };
-          } else if (isPaymentRejectedStatus(remoteData.status)) {
-            // Preserve remote REJECTED state unconditionally
-            updatedPayment = {
-              ...remoteData,
-              status: 'REJECTED',
-              screenshotURL: '',
-              screenshotDeleted: true,
-              screenshotDeletedAt: nowIso,
-              deletedAt: nowIso,
-            };
-          }
+        const remoteData = paymentSnap.exists()
+          ? (paymentSnap.data() as PaymentRecord)
+          : localPayment;
+
+        if (isPaymentApprovedStatus(remoteData.status)) {
+          committedPayment = {
+            ...remoteData,
+            status: 'APPROVED',
+            screenshotURL: '',
+            screenshotDeleted: true,
+            screenshotDeletedAt: nowIso,
+            deletedAt: nowIso,
+          };
+          transaction.set(paymentRef, sanitizePaymentForFirestore(committedPayment), {
+            merge: true,
+          });
+          return;
         }
 
-        transaction.set(paymentRef, sanitizePaymentForFirestore(updatedPayment));
-        if (updatedPayment.status === 'REJECTED' && bookingsToUpdateInTx.length > 0) {
-          for (const cb of bookingsToUpdateInTx) {
-            const cbRef = doc(db, 'bookings', cb.bookingId);
-            transaction.set(cbRef, sanitizeBookingForFirestore(cb));
-          }
+        if (isPaymentRejectedStatus(remoteData.status)) {
+          committedPayment = {
+            ...remoteData,
+            status: 'REJECTED',
+            screenshotURL: '',
+            screenshotDeleted: true,
+            screenshotDeletedAt: nowIso,
+            deletedAt: nowIso,
+          };
+          transaction.set(paymentRef, sanitizePaymentForFirestore(committedPayment), {
+            merge: true,
+          });
+          return;
         }
+
+        // PENDING_VERIFICATION + DELETE -> Reject payment and cancel associated booking(s)
+        const bookingSnaps = await Promise.all(
+          Array.from(candidateBookingDocIds).map((docId) =>
+            transaction.get(doc(db, 'bookings', docId))
+          )
+        );
+
+        for (const bSnap of bookingSnaps) {
+          if (!bSnap.exists()) continue;
+          const bData = bSnap.data() as Booking;
+          const docId = bSnap.id;
+          const cancelledBooking: Booking = {
+            ...bData,
+            documentId: docId,
+            paymentStatus: 'REJECTED',
+            bookingStatus: 'CANCELLED',
+            status: 'CANCELLED',
+            rejectedAt: nowIso,
+          };
+          cancelledBookingsInTx.push(cancelledBooking);
+          transaction.set(
+            doc(db, 'bookings', docId),
+            {
+              ...sanitizeBookingForFirestore(cancelledBooking),
+              rejectedAtServer: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+
+        committedPayment = {
+          ...remoteData,
+          status: 'REJECTED',
+          rejectedAt: nowIso,
+          screenshotURL: '',
+          screenshotDeleted: true,
+          screenshotDeletedAt: nowIso,
+          deletedAt: nowIso,
+        };
+        transaction.set(
+          paymentRef,
+          {
+            ...sanitizePaymentForFirestore(committedPayment),
+            rejectedAtServer: serverTimestamp(),
+          },
+          { merge: true }
+        );
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `payments/${paymentId}`);
     }
 
-    if (bookingsToUpdateInTx.length > 0) {
-      storage.saveBookings(bookings);
+    if (cancelledBookingsInTx.length > 0) {
+      for (const cb of cancelledBookingsInTx) {
+        inventoryService.releaseStockOnNotSold(cb.productId, cb.quantity, false);
+      }
+      const updatedLocalBookings = [...storage.getBookings()];
+      for (const cb of cancelledBookingsInTx) {
+        const docId = getBookingFirestoreDocId(cb);
+        const idx = updatedLocalBookings.findIndex(
+          (b) =>
+            getBookingFirestoreDocId(b) === docId ||
+            b.bookingReference === cb.bookingReference ||
+            b.bookingId === cb.bookingId
+        );
+        if (idx !== -1) {
+          updatedLocalBookings[idx] = cb;
+        }
+      }
+      storage.saveBookings(updatedLocalBookings);
     }
-    payments[pIdx] = updatedPayment;
+
+    payments[pIdx] = committedPayment;
     storage.savePayments(payments);
 
-    return updatedPayment;
+    return committedPayment;
   },
 };
