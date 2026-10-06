@@ -1,0 +1,64 @@
+import { storage } from './storage';
+
+export type AppLanguage = 'English' | 'Hindi';
+
+export function getCurrentLanguage(): AppLanguage {
+  return storage.getSettings().language === 'Hindi' ? 'Hindi' : 'English';
+}
+
+export const translations = {
+  English: {
+    tagline: 'Your Local Fashion, All in One Place.',
+    localFashionMarketplace: 'Local Fashion Marketplace',
+    shopkeeperPortal: 'Shopkeeper Portal',
+    adminPortal: 'Admin Portal',
+    exploreLocalShops: 'Explore Local Shops',
+    exploreLocalShopsBtn: 'EXPLORE LOCAL SHOPS',
+    nearbyShopsWithin100Km: 'Nearby Clothing Shops (Within 100 KM)',
+    localClothingShops: 'Local Clothing Shops',
+    sortedNearestFarthest: 'Sorted Nearest → Farthest',
+    viewShop: 'VIEW SHOP',
+    backToShops: 'BACK TO SHOPS',
+    getDirections: 'GET DIRECTIONS',
+    openingMaps: 'OPENING MAPS...',
+    shopCollection: 'Shop Collection',
+    cart: 'Cart',
+    home: 'Home',
+    myOrders: 'My Orders',
+    themeLabel: 'Theme (Light / Dark)',
+    settings: 'Settings',
+    helpSupport: 'Help & Support',
+    privacyPolicy: 'Privacy Policy',
+    termsConditions: 'Terms & Conditions',
+    aboutDesiWardrobe: 'About Desi Wardrobe',
+    customerLoginRegister: 'Customer Login / Register',
+    logout: 'Logout',
+  },
+  Hindi: {
+    tagline: 'आपका लोकल फैशन, एक ही जगह पर।',
+    localFashionMarketplace: 'लोकल फैशन मार्केटप्लेस',
+    shopkeeperPortal: 'दुकानदार पोर्टल',
+    adminPortal: 'एडमिन पोर्टल',
+    exploreLocalShops: 'आस-पास की दुकानें देखें',
+    exploreLocalShopsBtn: 'लोकल दुकानें देखें (EXPLORE SHOPS)',
+    nearbyShopsWithin100Km: 'आस-पास की कपड़ों की दुकानें (100 KM के भीतर)',
+    localClothingShops: 'लोकल कपड़ों की दुकानें',
+    sortedNearestFarthest: 'सबसे पास → सबसे दूर',
+    viewShop: 'दुकान देखें (VIEW SHOP)',
+    backToShops: 'दुकानों पर वापस जाएं',
+    getDirections: 'रास्ता देखें (GET DIRECTIONS)',
+    openingMaps: 'मैप्स खुल रहा है...',
+    shopCollection: 'दुकान का कलेक्शन',
+    cart: 'कार्ट',
+    home: 'होम',
+    myOrders: 'मेरे ऑर्डर',
+    themeLabel: 'थीम (Light / Dark)',
+    settings: 'सेटिंग्स (Settings)',
+    helpSupport: 'सहायता और समर्थन (Help)',
+    privacyPolicy: 'गोपनीयता नीति (Privacy Policy)',
+    termsConditions: 'नियम एवं शर्तें (Terms)',
+    aboutDesiWardrobe: 'देसी वार्डरोब के बारे में (About)',
+    customerLoginRegister: 'ग्राहक लॉगिन / रजिस्टर',
+    logout: 'लॉगआउट',
+  },
+} as const;

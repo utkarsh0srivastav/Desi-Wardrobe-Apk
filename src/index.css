@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* LIGHT MODE:
+       Main background: Warm Cream
+       Primary action: Elegant Red
+       Secondary: Soft Beige / Warm Neutral
+       Text: Dark Brown / Charcoal
+       Cards: Light Cream / Off White
+    */
+    --bg-primary: #FAF4EC;
+    --bg-card: #FFFDF9;
+    --bg-secondary: #EFE5D6;
+    --text-primary: #241714;
+    --text-secondary: #5C433B;
+    --text-muted: #876B61;
+    --border-subtle: rgba(36, 23, 20, 0.09);
+    --border-strong: rgba(36, 23, 20, 0.18);
+    --accent-primary: #C41E2A;
+    --accent-hover: #A51621;
+    --accent-soft: rgba(196, 30, 42, 0.09);
+    --status-success: #15803D;
+    --status-warning: #B45309;
+    --status-danger: #B91C1C;
+  }
+
+  .dark {
+    /* DARK MODE:
+       Main background: Dark Maroon
+       Secondary/background surfaces: Brown (Kept strictly as true Brown)
+       Primary clickable elements: Red / Maroon-red
+       Text: Warm White / Cream
+    */
+    --bg-primary: #2A070E;
+    --bg-card: #4E2F1E;
+    --bg-secondary: #5E3A26;
+    --text-primary: #FDF7F0;
+    --text-secondary: #EDD9C8;
+    --text-muted: #C9AD97;
+    --border-subtle: rgba(253, 247, 240, 0.13);
+    --border-strong: rgba(253, 247, 240, 0.25);
+    --accent-primary: #D92938;
+    --accent-hover: #E63946;
+    --accent-soft: rgba(217, 41, 56, 0.22);
+    --status-success: #4ADE80;
+    --status-warning: #FBBF24;
+    --status-danger: #F87171;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  h1, h2, .font-display {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    text-wrap: balance;
+  }
+
+  .font-mono-tabular {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes desiSplash {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-desi-splash {
+  animation: desiSplash 1.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
