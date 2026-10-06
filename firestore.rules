@@ -1,0 +1,718 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'utkarsh0srivastav@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidShop(data, shopId) {
+      return data.keys().hasAll([
+        'shopId',
+        'shopkeeperId',
+        'shopName',
+        'shopkeeperName',
+        'mobile',
+        'photo',
+        'category',
+        'pricePolicy',
+        'latitude',
+        'longitude',
+        'locationName',
+        'shopStatus',
+        'profileStatus',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'shopId',
+        'shopkeeperId',
+        'shopName',
+        'shopkeeperName',
+        'mobile',
+        'photo',
+        'category',
+        'pricePolicy',
+        'latitude',
+        'longitude',
+        'locationName',
+        'shopStatus',
+        'profileStatus',
+        'openingTime',
+        'closingTime',
+        'status',
+        'updatedAt',
+        'createdAt'
+      ]) &&
+      data.shopId == shopId &&
+      isValidId(data.shopId) &&
+      isValidId(data.shopkeeperId) &&
+      data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+      data.shopkeeperName is string && data.shopkeeperName.size() >= 1 && data.shopkeeperName.size() <= 120 &&
+      data.mobile is string && data.mobile.size() >= 10 && data.mobile.size() <= 15 &&
+      data.photo is string && data.photo.size() >= 1 && data.photo.size() <= 800000 &&
+      data.category is string && data.category.size() <= 40 &&
+      data.category in ['MEN', 'WOMEN', 'BOTH', "Men's Wear", "Women's Wear", 'Both', 'Men', 'Women', 'Kids', "Kids' Wear", 'All'] &&
+      data.pricePolicy is string && data.pricePolicy.size() <= 40 &&
+      data.pricePolicy in ['FIXED', 'FIXED_PRICE', 'NEGOTIABLE', 'BARGAINING_AVAILABLE'] &&
+      data.latitude is number && data.latitude >= -90 && data.latitude <= 90 &&
+      data.longitude is number && data.longitude >= -180 && data.longitude <= 180 &&
+      data.locationName is string && data.locationName.size() >= 1 && data.locationName.size() <= 300 &&
+      data.shopStatus is string && data.shopStatus.size() <= 30 &&
+      data.shopStatus in ['ACTIVE', 'PRE_REGISTERED', 'PENDING', 'REJECTED', 'REMOVED', 'INCOMPLETE'] &&
+      data.profileStatus is string && data.profileStatus.size() <= 30 &&
+      data.profileStatus in ['COMPLETED', 'INCOMPLETE', 'PRE_REGISTERED', 'PENDING'] &&
+      (!('openingTime' in data) || (data.openingTime is string && data.openingTime.size() <= 30)) &&
+      (!('closingTime' in data) || (data.closingTime is string && data.closingTime.size() <= 30)) &&
+      (!('status' in data) || (data.status is string && data.status.size() <= 20 && data.status in ['OPEN', 'CLOSED'])) &&
+      (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64)) &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
+    }
+
+    function isValidProduct(data, productId) {
+      return data.keys().hasAll([
+        'productId',
+        'shopId',
+        'name',
+        'description',
+        'price',
+        'quantity',
+        'sizes',
+        'colors',
+        'images',
+        'pricePolicy',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'productId',
+        'shopId',
+        'name',
+        'description',
+        'price',
+        'quantity',
+        'soldCount',
+        'sizes',
+        'colors',
+        'images',
+        'thumbnails',
+        'pricePolicy',
+        'status',
+        'createdAt'
+      ]) &&
+      data.productId == productId &&
+      isValidId(data.productId) &&
+      isValidId(data.shopId) &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+      data.description is string && data.description.size() >= 1 && data.description.size() <= 1000 &&
+      data.price is number && data.price > 0 && data.price <= 10000000 &&
+      data.quantity is number && data.quantity >= 0 && data.quantity <= 100000 &&
+      (!('soldCount' in data) || (data.soldCount is number && data.soldCount >= 0)) &&
+      data.sizes is list && data.sizes.size() >= 1 && data.sizes.size() <= 20 && data.sizes[0] is string && data.sizes[0].size() <= 20 &&
+      data.colors is list && data.colors.size() >= 1 && data.colors.size() <= 25 && data.colors[0] is string && data.colors[0].size() <= 40 &&
+      data.images is list && data.images.size() >= 1 && data.images.size() <= 8 && data.images[0] is string && data.images[0].size() <= 800000 &&
+      (!('thumbnails' in data) || (data.thumbnails is list && data.thumbnails.size() <= 8 && (data.thumbnails.size() == 0 || (data.thumbnails[0] is string && data.thumbnails[0].size() <= 300000)))) &&
+      data.pricePolicy is string && data.pricePolicy.size() <= 40 &&
+      data.pricePolicy in ['FIXED', 'FIXED_PRICE', 'NEGOTIABLE', 'BARGAINING_AVAILABLE'] &&
+      (!('status' in data) || (data.status is string && data.status.size() <= 30 && data.status in ['AVAILABLE', 'OUT_OF_STOCK'])) &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
+    }
+
+    function isValidBooking(data, bookingId) {
+      return data.keys().hasAll([
+        'bookingId',
+        'customerId',
+        'shopId',
+        'shopkeeperId',
+        'productId',
+        'productName',
+        'productImage',
+        'shopName',
+        'customerName',
+        'customerMobile',
+        'size',
+        'color',
+        'quantity',
+        'price',
+        'status',
+        'createdAt',
+        'pickupDeadline'
+      ]) &&
+      data.keys().hasOnly([
+        'bookingId',
+        'bookingReference',
+        'paymentId',
+        'customerId',
+        'shopId',
+        'shopkeeperId',
+        'productId',
+        'productName',
+        'productImage',
+        'shopName',
+        'shopLocationName',
+        'customerName',
+        'customerMobile',
+        'size',
+        'color',
+        'quantity',
+        'price',
+        'paymentAmount',
+        'paymentStatus',
+        'bookingStatus',
+        'status',
+        'createdAt',
+        'confirmedAt',
+        'pickupDeadline'
+      ]) &&
+      data.bookingId == bookingId &&
+      isValidId(data.bookingId) &&
+      (!('bookingReference' in data) || (data.bookingReference is string && data.bookingReference.size() <= 128)) &&
+      (!('paymentId' in data) || (data.paymentId is string && data.paymentId.size() <= 128)) &&
+      isValidId(data.customerId) &&
+      isValidId(data.shopId) &&
+      isValidId(data.shopkeeperId) &&
+      isValidId(data.productId) &&
+      data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 150 &&
+      data.productImage is string && data.productImage.size() <= 800000 &&
+      data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+      (!('shopLocationName' in data) || (data.shopLocationName is string && data.shopLocationName.size() <= 300)) &&
+      data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+      data.customerMobile is string && data.customerMobile.size() >= 10 && data.customerMobile.size() <= 15 &&
+      data.size is string && data.size.size() >= 1 && data.size.size() <= 20 &&
+      data.color is string && data.color.size() >= 1 && data.color.size() <= 40 &&
+      data.quantity is number && data.quantity >= 1 && data.quantity <= 1000 &&
+      data.price is number && data.price > 0 && data.price <= 10000000 &&
+      (!('paymentAmount' in data) || (data.paymentAmount is number && data.paymentAmount >= 0 && data.paymentAmount <= 10000000)) &&
+      (!('paymentStatus' in data) || (data.paymentStatus is string && data.paymentStatus.size() <= 40 && data.paymentStatus in ['PENDING_VERIFICATION', 'APPROVED', 'VERIFIED', 'REJECTED'])) &&
+      (!('bookingStatus' in data) || (data.bookingStatus is string && data.bookingStatus.size() <= 40 && data.bookingStatus in ['PAYMENT_PENDING', 'PAYMENT_REJECTED', 'CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED', 'CANCELLED'])) &&
+      data.status is string && data.status.size() <= 40 &&
+      data.status in ['PAYMENT_PENDING', 'PAYMENT_REJECTED', 'CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED', 'CANCELLED'] &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+      (!('confirmedAt' in data) || (data.confirmedAt is string && data.confirmedAt.size() <= 64)) &&
+      data.pickupDeadline is string && data.pickupDeadline.size() >= 1 && data.pickupDeadline.size() <= 64;
+    }
+
+    function isValidPayment(data, paymentId) {
+      return data.keys().hasAll([
+        'paymentId',
+        'customerId',
+        'customerName',
+        'customerMobile',
+        'bookingReference',
+        'bookingIds',
+        'shopId',
+        'shopName',
+        'productId',
+        'productName',
+        'size',
+        'color',
+        'quantity',
+        'expectedAmount',
+        'upiId',
+        'screenshotStoragePath',
+        'screenshotURL',
+        'status',
+        'submittedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'paymentId',
+        'customerId',
+        'customerName',
+        'customerMobile',
+        'bookingReference',
+        'bookingIds',
+        'finalBookingIds',
+        'shopId',
+        'shopName',
+        'productId',
+        'productName',
+        'size',
+        'color',
+        'quantity',
+        'expectedAmount',
+        'upiId',
+        'screenshotStoragePath',
+        'screenshotURL',
+        'screenshotFileName',
+        'originalSizeKB',
+        'compressedSizeKB',
+        'status',
+        'submittedAt',
+        'createdAt',
+        'verifiedAt',
+        'rejectedAt',
+        'deletedAt',
+        'screenshotDeleted',
+        'screenshotDeletedAt'
+      ]) &&
+      data.paymentId == paymentId &&
+      isValidId(data.paymentId) &&
+      data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+      data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+      data.customerMobile is string && data.customerMobile.size() >= 10 && data.customerMobile.size() <= 15 &&
+      data.bookingReference is string && data.bookingReference.size() >= 1 && data.bookingReference.size() <= 128 &&
+      data.bookingIds is list && data.bookingIds.size() >= 1 && data.bookingIds.size() <= 20 && data.bookingIds[0] is string && data.bookingIds[0].size() <= 128 &&
+      (!('finalBookingIds' in data) || (data.finalBookingIds is list && data.finalBookingIds.size() <= 20 && (data.finalBookingIds.size() == 0 || (data.finalBookingIds[0] is string && data.finalBookingIds[0].size() <= 128)))) &&
+      data.shopId is string && data.shopId.size() >= 1 && data.shopId.size() <= 128 &&
+      data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+      data.productId is string && data.productId.size() >= 1 && data.productId.size() <= 128 &&
+      data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 200 &&
+      data.size is string && data.size.size() <= 60 &&
+      data.color is string && data.color.size() <= 80 &&
+      data.quantity is number && data.quantity >= 1 && data.quantity <= 1000 &&
+      data.expectedAmount is number && data.expectedAmount >= 1 && data.expectedAmount <= 10000000 &&
+      data.upiId is string && data.upiId.size() >= 3 && data.upiId.size() <= 100 &&
+      data.screenshotStoragePath is string && data.screenshotStoragePath.size() <= 500 &&
+      data.screenshotURL is string && data.screenshotURL.size() <= 800000 &&
+      (!('screenshotFileName' in data) || (data.screenshotFileName is string && data.screenshotFileName.size() <= 200)) &&
+      (!('originalSizeKB' in data) || (data.originalSizeKB is number && data.originalSizeKB >= 0 && data.originalSizeKB <= 1000000)) &&
+      (!('compressedSizeKB' in data) || (data.compressedSizeKB is number && data.compressedSizeKB >= 0 && data.compressedSizeKB <= 1000000)) &&
+      data.status is string && data.status.size() <= 40 &&
+      data.status in ['PENDING_VERIFICATION', 'APPROVED', 'VERIFIED', 'REJECTED'] &&
+      data.submittedAt is string && data.submittedAt.size() >= 1 && data.submittedAt.size() <= 64 &&
+      (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+      (!('verifiedAt' in data) || (data.verifiedAt is string && data.verifiedAt.size() <= 64)) &&
+      (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() <= 64)) &&
+      (!('deletedAt' in data) || (data.deletedAt is string && data.deletedAt.size() <= 64)) &&
+      (!('screenshotDeleted' in data) || data.screenshotDeleted is bool) &&
+      (!('screenshotDeletedAt' in data) || (data.screenshotDeletedAt is string && data.screenshotDeletedAt.size() <= 64));
+    }
+
+    function isValidCustomer(data, customerId) {
+      return data.keys().hasAll([
+        'customerId',
+        'name',
+        'mobile',
+        'pin',
+        'approvalStatus',
+        'accountStatus',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'customerId',
+        'name',
+        'mobile',
+        'email',
+        'pin',
+        'approvalStatus',
+        'accountStatus',
+        'createdAt'
+      ]) &&
+      data.customerId == customerId &&
+      isValidId(data.customerId) &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+      data.mobile is string && data.mobile.size() >= 10 && data.mobile.size() <= 15 &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 150)) &&
+      data.pin is string && data.pin.size() >= 4 && data.pin.size() <= 128 &&
+      data.approvalStatus is string && data.approvalStatus.size() <= 30 &&
+      data.approvalStatus in ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED', 'ACTIVE'] &&
+      data.accountStatus is string && data.accountStatus.size() <= 30 &&
+      data.accountStatus in ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED', 'ACTIVE'] &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
+    }
+
+    function isValidShopkeeper(data, shopkeeperId) {
+      return data.keys().hasAll([
+        'shopkeeperId',
+        'mobile',
+        'registrationStatus',
+        'verificationStatus',
+        'approvalStatus',
+        'pinCreated',
+        'profileStatus',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'shopkeeperId',
+        'name',
+        'mobile',
+        'pin',
+        'shopId',
+        'registrationStatus',
+        'verificationStatus',
+        'approvalStatus',
+        'pinCreated',
+        'profileStatus',
+        'createdAt',
+        'verifiedAt',
+        'approvedAt'
+      ]) &&
+      data.shopkeeperId == shopkeeperId &&
+      isValidId(data.shopkeeperId) &&
+      (!('name' in data) || (data.name is string && data.name.size() <= 120)) &&
+      data.mobile is string && data.mobile.size() >= 10 && data.mobile.size() <= 15 &&
+      (!('pin' in data) || (data.pin is string && data.pin.size() <= 128)) &&
+      (!('shopId' in data) || (data.shopId is string && data.shopId.size() <= 128)) &&
+      data.registrationStatus is string && data.registrationStatus.size() <= 30 &&
+      data.registrationStatus in ['PRE_REGISTERED', 'COMPLETED'] &&
+      data.verificationStatus is string && data.verificationStatus.size() <= 30 &&
+      data.verificationStatus in ['UNVERIFIED', 'VERIFIED'] &&
+      data.approvalStatus is string && data.approvalStatus.size() <= 30 &&
+      data.approvalStatus in ['NONE', 'PENDING', 'APPROVED', 'REJECTED'] &&
+      data.pinCreated is bool &&
+      data.profileStatus is string && data.profileStatus.size() <= 30 &&
+      data.profileStatus in ['INCOMPLETE', 'COMPLETED', 'PRE_REGISTERED', 'PENDING'] &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+      (!('verifiedAt' in data) || (data.verifiedAt is string && data.verifiedAt.size() <= 64)) &&
+      (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 64));
+    }
+
+    function isValidAdminAccount(data, adminUid) {
+      return data.keys().hasAll([
+        'adminUid',
+        'authorizedEmail',
+        'pinConfigured',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'adminUid',
+        'authorizedEmail',
+        'pinConfigured',
+        'pinHash',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.adminUid == adminUid &&
+      isValidId(data.adminUid) &&
+      data.authorizedEmail is string && data.authorizedEmail.size() >= 3 && data.authorizedEmail.size() <= 150 &&
+      data.pinConfigured is bool &&
+      (!('pinHash' in data) || (data.pinHash is string && data.pinHash.size() <= 128)) &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+      (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidAdminDevice(data, deviceId) {
+      return data.keys().hasAll([
+        'deviceId',
+        'adminUid',
+        'deviceLabel',
+        'credentialHash',
+        'status',
+        'createdAt',
+        'lastUsedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'deviceId',
+        'adminUid',
+        'deviceLabel',
+        'credentialHash',
+        'status',
+        'createdAt',
+        'lastUsedAt'
+      ]) &&
+      data.deviceId == deviceId &&
+      isValidId(data.deviceId) &&
+      isValidId(data.adminUid) &&
+      data.deviceLabel is string && data.deviceLabel.size() >= 1 && data.deviceLabel.size() <= 120 &&
+      data.credentialHash is string && data.credentialHash.size() >= 10 && data.credentialHash.size() <= 128 &&
+      data.status is string && data.status.size() <= 30 &&
+      data.status in ['TRUSTED', 'PENDING_APPROVAL', 'REVOKED'] &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+      data.lastUsedAt is string && data.lastUsedAt.size() >= 1 && data.lastUsedAt.size() <= 64;
+    }
+
+    function isValidPlatformConfig(data) {
+      return data.keys().hasAll([
+        'ADMIN_EMAIL',
+        'ADMIN_UPI_ID',
+        'MIN_BOOKING_AMOUNT_PER_UNIT',
+        'SHOP_RADIUS_KM',
+        'PICKUP_HOURS'
+      ]) &&
+      data.keys().hasOnly([
+        'ADMIN_EMAIL',
+        'ADMIN_UPI_ID',
+        'MIN_BOOKING_AMOUNT_PER_UNIT',
+        'SHOP_RADIUS_KM',
+        'PICKUP_HOURS',
+        'updatedAt'
+      ]) &&
+      data.ADMIN_EMAIL is string && data.ADMIN_EMAIL.size() >= 3 && data.ADMIN_EMAIL.size() <= 150 &&
+      data.ADMIN_UPI_ID is string && data.ADMIN_UPI_ID.size() >= 3 && data.ADMIN_UPI_ID.size() <= 100 &&
+      data.MIN_BOOKING_AMOUNT_PER_UNIT is number && data.MIN_BOOKING_AMOUNT_PER_UNIT >= 1 && data.MIN_BOOKING_AMOUNT_PER_UNIT <= 100000 &&
+      data.SHOP_RADIUS_KM is number && data.SHOP_RADIUS_KM >= 1 && data.SHOP_RADIUS_KM <= 5000 &&
+      data.PICKUP_HOURS is number && data.PICKUP_HOURS >= 1 && data.PICKUP_HOURS <= 720 &&
+      (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    match /shops/{shopId} {
+      allow get: if isValidId(shopId) && (existing().shopStatus in ['ACTIVE', 'REMOVED', 'INCOMPLETE', 'PRE_REGISTERED', 'PENDING'] || isAdmin());
+      allow list: if existing().shopStatus in ['ACTIVE', 'REMOVED', 'INCOMPLETE', 'PRE_REGISTERED', 'PENDING'] || isAdmin();
+      allow create: if isValidId(shopId) && isValidShop(incoming(), shopId);
+      allow update: if isValidId(shopId) && isValidShop(incoming(), shopId) && (
+        isAdmin() ||
+        (
+          incoming().shopId == existing().shopId &&
+          incoming().shopkeeperId == existing().shopkeeperId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'shopName',
+            'shopkeeperName',
+            'mobile',
+            'photo',
+            'category',
+            'pricePolicy',
+            'latitude',
+            'longitude',
+            'locationName',
+            'shopStatus',
+            'profileStatus',
+            'openingTime',
+            'closingTime',
+            'status',
+            'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isValidId(shopId) && isAdmin();
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId) && existing().price > 0;
+      allow list: if existing().price > 0;
+      allow create: if isValidId(productId) && isValidProduct(incoming(), productId) &&
+        exists(/databases/$(database)/documents/shops/$(incoming().shopId));
+      allow update: if isValidId(productId) && isValidProduct(incoming(), productId) && (
+        isAdmin() ||
+        (
+          incoming().productId == existing().productId &&
+          incoming().shopId == existing().shopId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'description',
+            'price',
+            'quantity',
+            'soldCount',
+            'sizes',
+            'colors',
+            'images',
+            'thumbnails',
+            'pricePolicy',
+            'status'
+          ])
+        )
+      );
+      allow delete: if isValidId(productId);
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && existing().quantity >= 1;
+      allow list: if existing().quantity >= 1;
+      allow create: if isValidId(bookingId) && isValidBooking(incoming(), bookingId) &&
+        exists(/databases/$(database)/documents/shops/$(incoming().shopId));
+      allow update: if isValidId(bookingId) && isValidBooking(incoming(), bookingId) &&
+        incoming().customerId == existing().customerId &&
+        incoming().shopId == existing().shopId &&
+        incoming().shopkeeperId == existing().shopkeeperId &&
+        incoming().productId == existing().productId &&
+        incoming().createdAt == existing().createdAt &&
+        (!(existing().paymentStatus in ['APPROVED', 'VERIFIED']) || (
+          incoming().paymentStatus in ['APPROVED', 'VERIFIED'] &&
+          incoming().bookingId == existing().bookingId &&
+          incoming().bookingStatus in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED'] &&
+          incoming().status in ['CONFIRMED', 'BOOKED', 'SOLD', 'NOT_SOLD', 'EXPIRED']
+        )) &&
+        (!(existing().paymentStatus == 'REJECTED') || (
+          incoming().paymentStatus == 'REJECTED' &&
+          incoming().bookingStatus == 'CANCELLED' &&
+          incoming().status == 'CANCELLED'
+        )) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'bookingId',
+          'bookingReference',
+          'paymentId',
+          'paymentAmount',
+          'paymentStatus',
+          'bookingStatus',
+          'status',
+          'confirmedAt',
+          'pickupDeadline'
+        ]);
+      allow delete: if isValidId(bookingId);
+    }
+
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && existing().expectedAmount >= 1;
+      allow list: if existing().expectedAmount >= 1;
+      allow create: if isValidId(paymentId) && isValidPayment(incoming(), paymentId) &&
+        incoming().status == 'PENDING_VERIFICATION' &&
+        !('verifiedAt' in incoming()) &&
+        !('rejectedAt' in incoming()) &&
+        !('finalBookingIds' in incoming());
+      allow update: if isValidId(paymentId) && isValidPayment(incoming(), paymentId) &&
+        incoming().paymentId == existing().paymentId &&
+        incoming().customerId == existing().customerId &&
+        incoming().bookingReference == existing().bookingReference &&
+        incoming().expectedAmount == existing().expectedAmount &&
+        (
+          (existing().status == 'PENDING_VERIFICATION' && incoming().status in ['APPROVED', 'VERIFIED']) ||
+          (existing().status == 'PENDING_VERIFICATION' && incoming().status == 'REJECTED') ||
+          (
+            existing().status in ['APPROVED', 'VERIFIED'] &&
+            incoming().status in ['APPROVED', 'VERIFIED'] &&
+            incoming().screenshotDeleted == true &&
+            incoming().screenshotURL == '' &&
+            incoming().finalBookingIds == existing().finalBookingIds &&
+            incoming().verifiedAt == existing().verifiedAt
+          ) ||
+          (
+            existing().status == 'REJECTED' &&
+            incoming().status == 'REJECTED' &&
+            incoming().screenshotDeleted == true &&
+            incoming().screenshotURL == '' &&
+            incoming().rejectedAt == existing().rejectedAt
+          )
+        ) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'verifiedAt',
+          'rejectedAt',
+          'deletedAt',
+          'screenshotDeleted',
+          'screenshotDeletedAt',
+          'finalBookingIds',
+          'screenshotStoragePath',
+          'screenshotURL',
+          'screenshotFileName',
+          'originalSizeKB',
+          'compressedSizeKB',
+          'submittedAt',
+          'createdAt'
+        ]);
+      allow delete: if isValidId(paymentId) && isAdmin();
+    }
+
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && existing().accountStatus in ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED', 'ACTIVE'];
+      allow list: if existing().accountStatus in ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED', 'ACTIVE'];
+      allow create: if isValidId(customerId) && isValidCustomer(incoming(), customerId);
+      allow update: if isValidId(customerId) && isValidCustomer(incoming(), customerId) && (
+        isAdmin() ||
+        (
+          incoming().customerId == existing().customerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'email',
+            'pin',
+            'approvalStatus',
+            'accountStatus'
+          ])
+        )
+      );
+      allow delete: if isValidId(customerId) && isAdmin();
+    }
+
+    match /shopkeepers/{shopkeeperId} {
+      allow get: if isValidId(shopkeeperId) && existing().registrationStatus in ['PRE_REGISTERED', 'COMPLETED'];
+      allow list: if existing().registrationStatus in ['PRE_REGISTERED', 'COMPLETED'];
+      allow create: if isValidId(shopkeeperId) && isValidShopkeeper(incoming(), shopkeeperId);
+      allow update: if isValidId(shopkeeperId) && isValidShopkeeper(incoming(), shopkeeperId) && (
+        isAdmin() ||
+        (
+          incoming().shopkeeperId == existing().shopkeeperId &&
+          incoming().mobile == existing().mobile &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'pin',
+            'shopId',
+            'registrationStatus',
+            'verificationStatus',
+            'approvalStatus',
+            'pinCreated',
+            'profileStatus',
+            'verifiedAt',
+            'approvedAt'
+          ])
+        )
+      );
+      allow delete: if isValidId(shopkeeperId) && isAdmin();
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && existing().pinConfigured in [true, false];
+      allow list: if existing().pinConfigured in [true, false];
+      allow create: if isValidId(adminUid) && isValidAdminAccount(incoming(), adminUid);
+      allow update: if isValidId(adminUid) && isValidAdminAccount(incoming(), adminUid) && (
+        isAdmin() ||
+        (
+          incoming().adminUid == existing().adminUid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'authorizedEmail',
+            'pinConfigured',
+            'pinHash',
+            'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isValidId(adminUid) && isAdmin();
+    }
+
+    match /adminDevices/{deviceId} {
+      allow get: if isValidId(deviceId) && existing().status in ['TRUSTED', 'PENDING_APPROVAL', 'REVOKED'];
+      allow list: if existing().status in ['TRUSTED', 'PENDING_APPROVAL', 'REVOKED'];
+      allow create: if isValidId(deviceId) && isValidAdminDevice(incoming(), deviceId);
+      allow update: if isValidId(deviceId) && isValidAdminDevice(incoming(), deviceId) && (
+        isAdmin() ||
+        (
+          incoming().deviceId == existing().deviceId &&
+          incoming().adminUid == existing().adminUid &&
+          incoming().credentialHash == existing().credentialHash &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status',
+            'lastUsedAt',
+            'deviceLabel'
+          ])
+        )
+      );
+      allow delete: if isValidId(deviceId) && isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && existing().MIN_BOOKING_AMOUNT_PER_UNIT >= 1;
+      allow list: if existing().MIN_BOOKING_AMOUNT_PER_UNIT >= 1;
+      allow create: if isValidId(settingId) && isValidPlatformConfig(incoming());
+      allow update: if isValidId(settingId) && isValidPlatformConfig(incoming()) && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'ADMIN_EMAIL',
+          'ADMIN_UPI_ID',
+          'MIN_BOOKING_AMOUNT_PER_UNIT',
+          'SHOP_RADIUS_KM',
+          'PICKUP_HOURS',
+          'updatedAt'
+        ])
+      );
+      allow delete: if isValidId(settingId) && isAdmin();
+    }
+  }
+}

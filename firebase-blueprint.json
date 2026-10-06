@@ -1,0 +1,335 @@
+{
+  "entities": {
+    "Shop": {
+      "title": "Shop",
+      "description": "A local clothing shop registered on Desi Wardrobe with real GPS coordinates and active status.",
+      "type": "object",
+      "properties": {
+        "shopId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shopkeeperId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shopName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "shopkeeperName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "mobile": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "photo": { "type": "string", "minLength": 1, "maxLength": 800000 },
+        "category": { "type": "string", "maxLength": 40 },
+        "pricePolicy": { "type": "string", "maxLength": 40 },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "locationName": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "shopStatus": { "type": "string", "maxLength": 30 },
+        "profileStatus": { "type": "string", "maxLength": 30 },
+        "openingTime": { "type": "string", "maxLength": 30 },
+        "closingTime": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "maxLength": 20 },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "shopId",
+        "shopkeeperId",
+        "shopName",
+        "shopkeeperName",
+        "mobile",
+        "photo",
+        "category",
+        "pricePolicy",
+        "latitude",
+        "longitude",
+        "locationName",
+        "shopStatus",
+        "profileStatus",
+        "createdAt"
+      ]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Clothing product uploaded by a local shopkeeper.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shopId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "price": { "type": "number" },
+        "quantity": { "type": "number" },
+        "soldCount": { "type": "number" },
+        "sizes": { "type": "array" },
+        "colors": { "type": "array" },
+        "images": { "type": "array" },
+        "thumbnails": { "type": "array" },
+        "pricePolicy": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "productId",
+        "shopId",
+        "name",
+        "description",
+        "price",
+        "quantity",
+        "sizes",
+        "colors",
+        "images",
+        "pricePolicy",
+        "createdAt"
+      ]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Customer product booking with UPI payment verification and 48-hour pickup window.",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bookingReference": { "type": "string", "maxLength": 128 },
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shopId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "shopkeeperId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "productImage": { "type": "string", "maxLength": 800000 },
+        "shopName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "shopLocationName": { "type": "string", "maxLength": 300 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerMobile": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "size": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "color": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "paymentAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "maxLength": 40 },
+        "bookingStatus": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "confirmedAt": { "type": "string", "maxLength": 64 },
+        "pickupDeadline": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "bookingId",
+        "customerId",
+        "shopId",
+        "shopkeeperId",
+        "productId",
+        "productName",
+        "productImage",
+        "shopName",
+        "customerName",
+        "customerMobile",
+        "size",
+        "color",
+        "quantity",
+        "price",
+        "status",
+        "createdAt",
+        "pickupDeadline"
+      ]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Manual UPI booking payment proof uploaded by customer for Admin verification.",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerMobile": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "bookingReference": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "bookingIds": { "type": "array" },
+        "finalBookingIds": { "type": "array" },
+        "shopId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "shopName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "size": { "type": "string", "maxLength": 60 },
+        "color": { "type": "string", "maxLength": 80 },
+        "quantity": { "type": "number" },
+        "expectedAmount": { "type": "number" },
+        "upiId": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "screenshotStoragePath": { "type": "string", "maxLength": 500 },
+        "screenshotURL": { "type": "string", "maxLength": 800000 },
+        "screenshotFileName": { "type": "string", "maxLength": 200 },
+        "originalSizeKB": { "type": "number" },
+        "compressedSizeKB": { "type": "number" },
+        "status": { "type": "string", "maxLength": 40 },
+        "submittedAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "verifiedAt": { "type": "string", "maxLength": 64 },
+        "rejectedAt": { "type": "string", "maxLength": 64 },
+        "deletedAt": { "type": "string", "maxLength": 64 },
+        "screenshotDeleted": { "type": "boolean" },
+        "screenshotDeletedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": [
+        "paymentId",
+        "customerId",
+        "customerName",
+        "customerMobile",
+        "bookingReference",
+        "bookingIds",
+        "shopId",
+        "shopName",
+        "productId",
+        "productName",
+        "size",
+        "color",
+        "quantity",
+        "expectedAmount",
+        "upiId",
+        "screenshotStoragePath",
+        "screenshotURL",
+        "status",
+        "submittedAt"
+      ]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Registered customer account on Desi Wardrobe.",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "mobile": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "email": { "type": "string", "maxLength": 150 },
+        "pin": { "type": "string", "minLength": 4, "maxLength": 128 },
+        "approvalStatus": { "type": "string", "maxLength": 30 },
+        "accountStatus": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "customerId",
+        "name",
+        "mobile",
+        "pin",
+        "approvalStatus",
+        "accountStatus",
+        "createdAt"
+      ]
+    },
+    "Shopkeeper": {
+      "title": "Shopkeeper",
+      "description": "Pre-registered or active shopkeeper account on Desi Wardrobe.",
+      "type": "object",
+      "properties": {
+        "shopkeeperId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "mobile": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "pin": { "type": "string", "maxLength": 128 },
+        "shopId": { "type": "string", "maxLength": 128 },
+        "registrationStatus": { "type": "string", "maxLength": 30 },
+        "verificationStatus": { "type": "string", "maxLength": 30 },
+        "approvalStatus": { "type": "string", "maxLength": 30 },
+        "pinCreated": { "type": "boolean" },
+        "profileStatus": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "verifiedAt": { "type": "string", "maxLength": 64 },
+        "approvedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": [
+        "shopkeeperId",
+        "mobile",
+        "registrationStatus",
+        "verificationStatus",
+        "approvalStatus",
+        "pinCreated",
+        "profileStatus",
+        "createdAt"
+      ]
+    },
+    "AdminAccount": {
+      "title": "AdminAccount",
+      "description": "Authorized Admin account and hashed Admin PIN configuration.",
+      "type": "object",
+      "properties": {
+        "adminUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorizedEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "pinConfigured": { "type": "boolean" },
+        "pinHash": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["adminUid", "authorizedEmail", "pinConfigured", "createdAt"]
+    },
+    "AdminDevice": {
+      "title": "AdminDevice",
+      "description": "Trusted Admin device registration record with cryptographic credential hash.",
+      "type": "object",
+      "properties": {
+        "deviceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adminUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "deviceLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "credentialHash": { "type": "string", "minLength": 10, "maxLength": 128 },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "lastUsedAt": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "deviceId",
+        "adminUid",
+        "deviceLabel",
+        "credentialHash",
+        "status",
+        "createdAt",
+        "lastUsedAt"
+      ]
+    },
+    "PlatformConfig": {
+      "title": "PlatformConfig",
+      "description": "Centralized platform settings managed by Admin.",
+      "type": "object",
+      "properties": {
+        "ADMIN_EMAIL": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "ADMIN_UPI_ID": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "MIN_BOOKING_AMOUNT_PER_UNIT": { "type": "number" },
+        "SHOP_RADIUS_KM": { "type": "number" },
+        "PICKUP_HOURS": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": [
+        "ADMIN_EMAIL",
+        "ADMIN_UPI_ID",
+        "MIN_BOOKING_AMOUNT_PER_UNIT",
+        "SHOP_RADIUS_KM",
+        "PICKUP_HOURS"
+      ]
+    }
+  },
+  "firestore": {
+    "/shops/{shopId}": {
+      "schema": { "$ref": "#/entities/Shop" },
+      "description": "Clothing shops registered on Desi Wardrobe."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products listed by local clothing shops."
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Product bookings with UPI verification status and 48h pickup deadline."
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/PaymentRecord" },
+      "description": "Manual UPI payment proofs uploaded by customers."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer accounts and status."
+    },
+    "/shopkeepers/{shopkeeperId}": {
+      "schema": { "$ref": "#/entities/Shopkeeper" },
+      "description": "Shopkeeper pre-registrations, verification requests, and accounts."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminAccount" },
+      "description": "Authorized Admin account and hashed PIN."
+    },
+    "/adminDevices/{deviceId}": {
+      "schema": { "$ref": "#/entities/AdminDevice" },
+      "description": "Registered and trusted Admin devices."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformConfig" },
+      "description": "Centralized Desi Wardrobe platform configuration."
+    }
+  }
+}

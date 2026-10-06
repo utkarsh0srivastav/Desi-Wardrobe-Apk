@@ -1,0 +1,8 @@
+{
+  "name": "Desi Wardrobe",
+  "description": "Local clothing marketplace for discovering and booking apparel from trusted fashion boutiques and garment stores across India.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
