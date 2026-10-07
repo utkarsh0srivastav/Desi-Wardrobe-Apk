@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/apk",
+      "destination": "https://github.com/utkarsh0srivastav/Desi-Wardrobe-Apk/releases/latest/download/Desi.Wardrobe.apk",
+      "permanent": false
+    }
+  ]
+}
