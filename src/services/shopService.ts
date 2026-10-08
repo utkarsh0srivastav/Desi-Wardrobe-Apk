@@ -10,10 +10,15 @@ import { db, handleFirestoreError, logFirestoreError, OperationType } from '../f
 import {
   PricePolicy,
   ProfileStatus,
+  resolveShopState,
   Shop,
   ShopCategory,
   Shopkeeper,
+  ShopSponsor,
   ShopStatus,
+  SPONSOR_DURATION_OPTIONS,
+  SponsorDurationValue,
+  SponsorStatus,
 } from '../types/models';
 import {
   CustomerPublicShop,
@@ -82,6 +87,10 @@ function normalizeFirestoreShopDocument(raw: Record<string, unknown>, docId: str
         ? raw.address.trim()
         : `Lat ${rawLat.toFixed(4)}, Lng ${rawLng.toFixed(4)}`;
 
+  const rawState =
+    typeof raw.state === 'string' && raw.state.trim() ? raw.state.trim() : undefined;
+  const resolvedState = resolveShopState({ state: rawState, locationName });
+
   const category = normalizeShopCategory(
     typeof raw.category === 'string' && raw.category.trim() ? raw.category.trim() : 'BOTH'
   ) as ShopCategory;
@@ -91,6 +100,24 @@ function normalizeFirestoreShopDocument(raw: Record<string, unknown>, docId: str
       ? raw.pricePolicy.trim()
       : 'FIXED_PRICE'
   ) as PricePolicy;
+
+  const isSponsored = raw.isSponsored === true;
+  const sponsorStatus =
+    typeof raw.sponsorStatus === 'string' && raw.sponsorStatus.trim()
+      ? (raw.sponsorStatus.trim().toUpperCase() as SponsorStatus)
+      : undefined;
+  const sponsorPlan =
+    typeof raw.sponsorPlan === 'string' && raw.sponsorPlan.trim()
+      ? raw.sponsorPlan.trim()
+      : undefined;
+  const sponsorStartDate =
+    typeof raw.sponsorStartDate === 'string' && raw.sponsorStartDate.trim()
+      ? raw.sponsorStartDate.trim()
+      : undefined;
+  const sponsorEndDate =
+    typeof raw.sponsorEndDate === 'string' && raw.sponsorEndDate.trim()
+      ? raw.sponsorEndDate.trim()
+      : undefined;
 
   return {
     shopId,
@@ -122,6 +149,7 @@ function normalizeFirestoreShopDocument(raw: Record<string, unknown>, docId: str
     latitude: Number(rawLat.toFixed(6)),
     longitude: Number(rawLng.toFixed(6)),
     locationName,
+    ...(resolvedState ? { state: resolvedState } : {}),
     shopStatus: rawShopStatus,
     profileStatus: rawProfileStatus,
     openingTime:
@@ -133,6 +161,11 @@ function normalizeFirestoreShopDocument(raw: Record<string, unknown>, docId: str
         ? raw.closingTime.trim()
         : '09:00 PM',
     status: raw.status === 'CLOSED' ? 'CLOSED' : 'OPEN',
+    ...(raw.isSponsored !== undefined ? { isSponsored } : {}),
+    ...(sponsorStatus ? { sponsorStatus } : {}),
+    ...(sponsorPlan ? { sponsorPlan } : {}),
+    ...(sponsorStartDate ? { sponsorStartDate } : {}),
+    ...(sponsorEndDate ? { sponsorEndDate } : {}),
     updatedAt:
       typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
     createdAt:
@@ -143,6 +176,7 @@ function normalizeFirestoreShopDocument(raw: Record<string, unknown>, docId: str
 }
 
 function sanitizeShopForFirestore(shop: Shop): Shop {
+  const resolvedState = resolveShopState(shop);
   return {
     shopId: shop.shopId,
     shopkeeperId: shop.shopkeeperId,
@@ -155,11 +189,17 @@ function sanitizeShopForFirestore(shop: Shop): Shop {
     latitude: Number(Number(shop.latitude).toFixed(6)),
     longitude: Number(Number(shop.longitude).toFixed(6)),
     locationName: shop.locationName.slice(0, 300),
+    ...(resolvedState ? { state: resolvedState.slice(0, 80) } : {}),
     shopStatus: shop.shopStatus || 'ACTIVE',
     profileStatus: shop.profileStatus || 'COMPLETED',
     openingTime: (shop.openingTime || '10:00 AM').slice(0, 30),
     closingTime: (shop.closingTime || '09:00 PM').slice(0, 30),
     status: shop.status || 'OPEN',
+    ...(shop.isSponsored !== undefined ? { isSponsored: Boolean(shop.isSponsored) } : {}),
+    ...(shop.sponsorStatus ? { sponsorStatus: shop.sponsorStatus } : {}),
+    ...(shop.sponsorPlan ? { sponsorPlan: shop.sponsorPlan.slice(0, 60) } : {}),
+    ...(shop.sponsorStartDate ? { sponsorStartDate: shop.sponsorStartDate } : {}),
+    ...(shop.sponsorEndDate ? { sponsorEndDate: shop.sponsorEndDate } : {}),
     updatedAt: new Date().toISOString(),
     createdAt: shop.createdAt,
   };
@@ -256,6 +296,7 @@ export const shopService = {
     latitude: number;
     longitude: number;
     locationName: string;
+    state?: string;
     shopStatus?: ShopStatus;
     profileStatus?: ProfileStatus;
   }): { shopkeeper: Shopkeeper; shop: Shop } => {
@@ -312,6 +353,11 @@ export const shopService = {
       approvedAt: existingSk?.approvedAt || now,
     };
 
+    const resolvedState = resolveShopState({
+      state: params.state,
+      locationName: params.locationName,
+    });
+
     const newShop: Shop = {
       shopId,
       shopkeeperId,
@@ -324,6 +370,7 @@ export const shopService = {
       latitude: Number(params.latitude.toFixed(6)),
       longitude: Number(params.longitude.toFixed(6)),
       locationName: params.locationName.trim().slice(0, 300),
+      ...(resolvedState ? { state: resolvedState } : {}),
       shopStatus: params.shopStatus || 'ACTIVE',
       profileStatus: params.profileStatus || 'COMPLETED',
       openingTime: '10:00 AM',
@@ -358,6 +405,7 @@ export const shopService = {
       latitude: number;
       longitude: number;
       locationName: string;
+      state?: string;
       shopStatus?: ShopStatus;
       profileStatus?: ProfileStatus;
     }
@@ -391,6 +439,10 @@ export const shopService = {
     const nextPolicy = updates.pricePolicy || shops[index].pricePolicy || 'FIXED_PRICE';
     const nextShopStatus = updates.shopStatus || shops[index].shopStatus || 'ACTIVE';
     const nextProfileStatus = updates.profileStatus || 'COMPLETED';
+    const resolvedState = resolveShopState({
+      state: updates.state ?? shops[index].state,
+      locationName: updates.locationName,
+    });
 
     const updatedShop: Shop = {
       ...shops[index],
@@ -403,6 +455,7 @@ export const shopService = {
       latitude: Number(updates.latitude.toFixed(6)),
       longitude: Number(updates.longitude.toFixed(6)),
       locationName: updates.locationName.trim().slice(0, 300),
+      ...(resolvedState ? { state: resolvedState } : {}),
       shopStatus: nextShopStatus,
       profileStatus: nextProfileStatus,
       updatedAt: new Date().toISOString(),
@@ -458,6 +511,213 @@ export const shopService = {
 
     shops[index] = updatedShop;
     storage.saveShops(shops);
+    await persistShopToFirestore(updatedShop, OperationType.UPDATE);
+    return updatedShop;
+  },
+
+  /**
+   * Updates the Indian State for a shop by Admin.
+   */
+  updateShopStateByAdmin: async (shopId: string, stateName: string): Promise<Shop> => {
+    const shops = storage.getShops();
+    const index = shops.findIndex((s) => s.shopId === shopId);
+    if (index === -1) {
+      throw new Error('Shop not found.');
+    }
+
+    const updatedShop: Shop = {
+      ...shops[index],
+      state: stateName.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    shops[index] = updatedShop;
+    storage.saveShops(shops);
+    await persistShopToFirestore(updatedShop, OperationType.UPDATE);
+    return updatedShop;
+  },
+
+  /**
+   * Real-time Firestore listener for shopSponsors collection.
+   */
+  subscribeToShopSponsors: (
+    onUpdate: (sponsorMap: Record<string, ShopSponsor>) => void
+  ): (() => void) => {
+    const sponsorsCol = collection(db, 'shopSponsors');
+    return onSnapshot(
+      sponsorsCol,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        const map: Record<string, ShopSponsor> = {};
+        snapshot.forEach((docSnap) => {
+          const raw = docSnap.data() as Record<string, unknown>;
+          const shopId =
+            typeof raw.shopId === 'string' && raw.shopId.trim()
+              ? raw.shopId.trim()
+              : docSnap.id;
+          if (!shopId) return;
+          const sponsorRecord: ShopSponsor = {
+            sponsorId:
+              typeof raw.sponsorId === 'string' && raw.sponsorId.trim()
+                ? raw.sponsorId.trim()
+                : shopId,
+            shopId,
+            shopName:
+              typeof raw.shopName === 'string' ? raw.shopName.trim() : '',
+            shopkeeperId:
+              typeof raw.shopkeeperId === 'string' ? raw.shopkeeperId.trim() : undefined,
+            isSponsored: raw.isSponsored === true,
+            sponsorStatus:
+              typeof raw.sponsorStatus === 'string'
+                ? (raw.sponsorStatus.trim().toUpperCase() as SponsorStatus)
+                : 'INACTIVE',
+            sponsorPlan:
+              typeof raw.sponsorPlan === 'string' ? raw.sponsorPlan.trim() : undefined,
+            sponsorStartDate:
+              typeof raw.sponsorStartDate === 'string' ? raw.sponsorStartDate : '',
+            sponsorEndDate:
+              typeof raw.sponsorEndDate === 'string' ? raw.sponsorEndDate : '',
+            sponsoredByAdminUid:
+              typeof raw.sponsoredByAdminUid === 'string'
+                ? raw.sponsoredByAdminUid
+                : undefined,
+            updatedAt:
+              typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
+            createdAt:
+              typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+          };
+          map[shopId] = sponsorRecord;
+        });
+        onUpdate(map);
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.GET, 'shopSponsors');
+      }
+    );
+  },
+
+  /**
+   * Activates or extends sponsorship for a shop by Admin.
+   */
+  sponsorShopByAdmin: async (params: {
+    shopId: string;
+    duration: SponsorDurationValue;
+    customEndDateIso?: string;
+    adminUid?: string;
+  }): Promise<{ shop: Shop; sponsor: ShopSponsor }> => {
+    const shops = storage.getShops();
+    const index = shops.findIndex((s) => s.shopId === params.shopId);
+    if (index === -1) {
+      throw new Error('Shop not found.');
+    }
+
+    const shop = shops[index];
+    const now = new Date();
+    const startIso = now.toISOString();
+
+    const durationOption =
+      SPONSOR_DURATION_OPTIONS.find((opt) => opt.value === params.duration) ||
+      SPONSOR_DURATION_OPTIONS[2]; // default 30_DAYS
+
+    let endIso: string;
+    if (params.customEndDateIso && !Number.isNaN(new Date(params.customEndDateIso).getTime())) {
+      const customEnd = new Date(params.customEndDateIso);
+      if (customEnd.getTime() <= now.getTime()) {
+        throw new Error('Sponsor expiry date must be in the future.');
+      }
+      endIso = customEnd.toISOString();
+    } else {
+      const endDate = new Date(now.getTime() + durationOption.days * 24 * 60 * 60 * 1000);
+      endIso = endDate.toISOString();
+    }
+
+    const sponsorRecord: ShopSponsor = {
+      sponsorId: shop.shopId,
+      shopId: shop.shopId,
+      shopName: shop.shopName.slice(0, 120),
+      shopkeeperId: shop.shopkeeperId,
+      isSponsored: true,
+      sponsorStatus: 'ACTIVE',
+      sponsorPlan: durationOption.label,
+      sponsorStartDate: startIso,
+      sponsorEndDate: endIso,
+      ...(params.adminUid ? { sponsoredByAdminUid: params.adminUid } : {}),
+      updatedAt: startIso,
+      createdAt: startIso,
+    };
+
+    const updatedShop: Shop = {
+      ...shop,
+      isSponsored: true,
+      sponsorStatus: 'ACTIVE',
+      sponsorPlan: durationOption.label,
+      sponsorStartDate: startIso,
+      sponsorEndDate: endIso,
+      updatedAt: startIso,
+    };
+
+    shops[index] = updatedShop;
+    storage.saveShops(shops);
+
+    try {
+      await setDoc(doc(db, 'shopSponsors', shop.shopId), sponsorRecord);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `shopSponsors/${shop.shopId}`);
+    }
+
+    await persistShopToFirestore(updatedShop, OperationType.UPDATE);
+
+    return { shop: updatedShop, sponsor: sponsorRecord };
+  },
+
+  /**
+   * Removes/stops sponsorship for a shop by Admin.
+   */
+  removeShopSponsorshipByAdmin: async (
+    shopId: string,
+    adminUid?: string
+  ): Promise<Shop> => {
+    const shops = storage.getShops();
+    const index = shops.findIndex((s) => s.shopId === shopId);
+    if (index === -1) {
+      throw new Error('Shop not found.');
+    }
+
+    const shop = shops[index];
+    const nowIso = new Date().toISOString();
+
+    const sponsorRecord: ShopSponsor = {
+      sponsorId: shop.shopId,
+      shopId: shop.shopId,
+      shopName: shop.shopName.slice(0, 120),
+      shopkeeperId: shop.shopkeeperId,
+      isSponsored: false,
+      sponsorStatus: 'INACTIVE',
+      sponsorPlan: shop.sponsorPlan || 'Removed',
+      sponsorStartDate: shop.sponsorStartDate || nowIso,
+      sponsorEndDate: nowIso,
+      ...(adminUid ? { sponsoredByAdminUid: adminUid } : {}),
+      updatedAt: nowIso,
+      createdAt: shop.sponsorStartDate || nowIso,
+    };
+
+    const updatedShop: Shop = {
+      ...shop,
+      isSponsored: false,
+      sponsorStatus: 'INACTIVE',
+      sponsorEndDate: nowIso,
+      updatedAt: nowIso,
+    };
+
+    shops[index] = updatedShop;
+    storage.saveShops(shops);
+
+    try {
+      await setDoc(doc(db, 'shopSponsors', shop.shopId), sponsorRecord);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `shopSponsors/${shop.shopId}`);
+    }
+
     await persistShopToFirestore(updatedShop, OperationType.UPDATE);
     return updatedShop;
   },

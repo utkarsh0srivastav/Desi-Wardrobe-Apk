@@ -29,6 +29,7 @@ import {
   Product,
   Shop,
   Shopkeeper,
+  ShopSponsor,
   ThemeMode,
 } from './types/models';
 import { ActiveAdminSession, storage } from './utils/storage';
@@ -80,6 +81,7 @@ export default function App() {
   const [showCustomerAuthModal, setShowCustomerAuthModal] = useState(false);
 
   const [shops, setShops] = useState<Shop[]>([]);
+  const [sponsorMap, setSponsorMap] = useState<Record<string, ShopSponsor>>({});
   const [shopkeepers, setShopkeepers] = useState<Shopkeeper[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -130,15 +132,17 @@ export default function App() {
     return unsubscribeStorage;
   }, [syncData]);
 
-  // Public & auth-bootstrap Firestore listeners (Shops, Products, Shopkeeper Pre-Registrations, Admin Config)
+  // Public & auth-bootstrap Firestore listeners (Shops, Shop Sponsors, Products, Shopkeeper Pre-Registrations, Admin Config)
   useEffect(() => {
     const unsubShops = shopService.subscribeToActiveShops(() => syncData());
+    const unsubSponsors = shopService.subscribeToShopSponsors((map) => setSponsorMap(map));
     const unsubProducts = productService.subscribeToProducts(() => syncData());
     const unsubShopkeepers = shopkeeperService.subscribeToShopkeepers(() => syncData());
     const unsubAdmin = adminService.subscribeToAdminAndSettings(() => syncData());
 
     return () => {
       unsubShops();
+      unsubSponsors();
       unsubProducts();
       unsubShopkeepers();
       unsubAdmin();
@@ -331,7 +335,8 @@ export default function App() {
   const sortedPublicShopsWithinRadius = locationService.getPublicShopsSortedByDistance(
     shops,
     customerCoords,
-    maxRadiusKm
+    maxRadiusKm,
+    sponsorMap
   );
 
   // Retry Payment helper for rejected bookings

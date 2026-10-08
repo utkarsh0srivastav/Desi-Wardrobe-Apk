@@ -232,7 +232,11 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
             {filteredShops.map((shop) => (
               <div
                 key={shop.shopId}
-                className="group rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col"
+                className={`group rounded-3xl bg-[var(--bg-card)] border overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col ${
+                  shop.isSponsored
+                    ? 'border-amber-500/70 ring-1 ring-amber-500/30 hover:border-amber-500'
+                    : 'border-[var(--border-subtle)] hover:border-[var(--accent-primary)]'
+                }`}
               >
                 {/* Shop Image Header */}
                 <div className="relative h-48 w-full bg-[var(--bg-secondary)] overflow-hidden">
@@ -243,8 +247,14 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-                  {/* Category Badge */}
+                  {/* Category & Sponsored Badges */}
                   <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    {shop.isSponsored && (
+                      <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-black text-[11px] font-extrabold tracking-wide uppercase flex items-center gap-1 shadow-xs">
+                        <Sparkles className="w-3 h-3" />
+                        <span>SPONSORED</span>
+                      </span>
+                    )}
                     <span className="px-2.5 py-1 rounded-xl bg-black/65 backdrop-blur-xs text-white text-[11px] font-semibold">
                       {formatShopCategoryLabel(shop.category, lang)}
                     </span>

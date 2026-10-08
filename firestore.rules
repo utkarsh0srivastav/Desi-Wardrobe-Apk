@@ -58,11 +58,17 @@ service cloud.firestore {
         'latitude',
         'longitude',
         'locationName',
+        'state',
         'shopStatus',
         'profileStatus',
         'openingTime',
         'closingTime',
         'status',
+        'isSponsored',
+        'sponsorStatus',
+        'sponsorPlan',
+        'sponsorStartDate',
+        'sponsorEndDate',
         'updatedAt',
         'createdAt'
       ]) &&
@@ -80,6 +86,7 @@ service cloud.firestore {
       data.latitude is number && data.latitude >= -90 && data.latitude <= 90 &&
       data.longitude is number && data.longitude >= -180 && data.longitude <= 180 &&
       data.locationName is string && data.locationName.size() >= 1 && data.locationName.size() <= 300 &&
+      (!('state' in data) || (data.state is string && data.state.size() <= 80)) &&
       data.shopStatus is string && data.shopStatus.size() <= 30 &&
       data.shopStatus in ['ACTIVE', 'PRE_REGISTERED', 'PENDING', 'REJECTED', 'REMOVED', 'INCOMPLETE'] &&
       data.profileStatus is string && data.profileStatus.size() <= 30 &&
@@ -87,6 +94,11 @@ service cloud.firestore {
       (!('openingTime' in data) || (data.openingTime is string && data.openingTime.size() <= 30)) &&
       (!('closingTime' in data) || (data.closingTime is string && data.closingTime.size() <= 30)) &&
       (!('status' in data) || (data.status is string && data.status.size() <= 20 && data.status in ['OPEN', 'CLOSED'])) &&
+      (!('isSponsored' in data) || (data.isSponsored is bool)) &&
+      (!('sponsorStatus' in data) || (data.sponsorStatus is string && data.sponsorStatus.size() <= 30 && data.sponsorStatus in ['ACTIVE', 'EXPIRED', 'INACTIVE', 'CANCELLED'])) &&
+      (!('sponsorPlan' in data) || (data.sponsorPlan is string && data.sponsorPlan.size() <= 80)) &&
+      (!('sponsorStartDate' in data) || (data.sponsorStartDate is string && data.sponsorStartDate.size() <= 64)) &&
+      (!('sponsorEndDate' in data) || (data.sponsorEndDate is string && data.sponsorEndDate.size() <= 64)) &&
       (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64)) &&
       data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
     }
@@ -471,6 +483,48 @@ service cloud.firestore {
       (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
+    function isValidShopSponsor(data, sponsorId) {
+      return data.keys().hasAll([
+        'sponsorId',
+        'shopId',
+        'shopName',
+        'isSponsored',
+        'sponsorStatus',
+        'sponsorStartDate',
+        'sponsorEndDate',
+        'updatedAt',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'sponsorId',
+        'shopId',
+        'shopName',
+        'shopkeeperId',
+        'isSponsored',
+        'sponsorStatus',
+        'sponsorPlan',
+        'sponsorStartDate',
+        'sponsorEndDate',
+        'sponsoredByAdminUid',
+        'updatedAt',
+        'createdAt'
+      ]) &&
+      data.sponsorId == sponsorId &&
+      isValidId(data.sponsorId) &&
+      isValidId(data.shopId) &&
+      data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+      (!('shopkeeperId' in data) || (data.shopkeeperId is string && data.shopkeeperId.size() <= 128)) &&
+      data.isSponsored is bool &&
+      data.sponsorStatus is string && data.sponsorStatus.size() <= 30 &&
+      data.sponsorStatus in ['ACTIVE', 'EXPIRED', 'INACTIVE', 'CANCELLED'] &&
+      (!('sponsorPlan' in data) || (data.sponsorPlan is string && data.sponsorPlan.size() <= 80)) &&
+      data.sponsorStartDate is string && data.sponsorStartDate.size() >= 1 && data.sponsorStartDate.size() <= 64 &&
+      data.sponsorEndDate is string && data.sponsorEndDate.size() >= 1 && data.sponsorEndDate.size() <= 64 &&
+      (!('sponsoredByAdminUid' in data) || (data.sponsoredByAdminUid is string && data.sponsoredByAdminUid.size() <= 128)) &&
+      data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64 &&
+      data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64;
+    }
+
     match /test/{docId} {
       allow get: if isValidId(docId);
     }
@@ -495,16 +549,48 @@ service cloud.firestore {
             'latitude',
             'longitude',
             'locationName',
+            'state',
             'shopStatus',
             'profileStatus',
             'openingTime',
             'closingTime',
             'status',
+            'isSponsored',
+            'sponsorStatus',
+            'sponsorPlan',
+            'sponsorStartDate',
+            'sponsorEndDate',
             'updatedAt'
           ])
         )
       );
       allow delete: if isValidId(shopId) && isAdmin();
+    }
+
+    match /shopSponsors/{sponsorId} {
+      allow get: if isValidId(sponsorId) && (existing().sponsorStatus in ['ACTIVE', 'EXPIRED', 'INACTIVE', 'CANCELLED'] || isAdmin());
+      allow list: if existing().sponsorStatus in ['ACTIVE', 'EXPIRED', 'INACTIVE', 'CANCELLED'] || isAdmin();
+      allow create: if isValidId(sponsorId) && isValidShopSponsor(incoming(), sponsorId);
+      allow update: if isValidId(sponsorId) && isValidShopSponsor(incoming(), sponsorId) && (
+        isAdmin() ||
+        (
+          incoming().sponsorId == existing().sponsorId &&
+          incoming().shopId == existing().shopId &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'shopName',
+            'shopkeeperId',
+            'isSponsored',
+            'sponsorStatus',
+            'sponsorPlan',
+            'sponsorStartDate',
+            'sponsorEndDate',
+            'sponsoredByAdminUid',
+            'updatedAt',
+            'createdAt'
+          ])
+        )
+      );
+      allow delete: if isValidId(sponsorId) && isAdmin();
     }
 
     match /products/{productId} {

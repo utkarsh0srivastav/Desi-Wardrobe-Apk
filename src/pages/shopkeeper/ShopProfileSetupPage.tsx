@@ -9,7 +9,13 @@ import {
   Tag,
   RefreshCw,
 } from 'lucide-react';
-import { PricePolicy, Shop, ShopCategory } from '../../types/models';
+import {
+  INDIAN_STATES,
+  PricePolicy,
+  resolveShopState,
+  Shop,
+  ShopCategory,
+} from '../../types/models';
 import { normalizeShopCategory } from '../../utils/category';
 import { shopService } from '../../services/shopService';
 import { imageService } from '../../services/imageService';
@@ -39,6 +45,7 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
   const [latitude, setLatitude] = useState<number>(shop.latitude);
   const [longitude, setLongitude] = useState<number>(shop.longitude);
   const [locationName, setLocationName] = useState(shop.locationName);
+  const [shopState, setShopState] = useState<string>(() => resolveShopState(shop));
 
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [autoLocateOnMapOpen, setAutoLocateOnMapOpen] = useState(false);
@@ -73,6 +80,10 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
         coords.longitude
       );
       setLocationName(resolvedName);
+      const detectedState = locationService.extractStateFromLocationText(resolvedName);
+      if (detectedState) {
+        setShopState(detectedState);
+      }
     } catch (err) {
       if (err instanceof LocationServiceError) {
         setLocationErrorMsg(err.shopkeeperMessage);
@@ -100,6 +111,7 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
         latitude,
         longitude,
         locationName,
+        state: shopState || locationService.extractStateFromLocationText(locationName),
         shopStatus: shop.shopStatus || 'ACTIVE',
         profileStatus: 'COMPLETED',
       });
@@ -273,9 +285,34 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
           type="text"
           required
           value={locationName}
-          onChange={(e) => setLocationName(e.target.value)}
+          onChange={(e) => {
+            setLocationName(e.target.value);
+            const detected = locationService.extractStateFromLocationText(e.target.value);
+            if (detected && !shopState) {
+              setShopState(detected);
+            }
+          }}
           className="w-full min-h-[46px] px-4 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
         />
+
+        <div>
+          <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1.5">
+            State (India)
+          </label>
+          <select
+            value={shopState}
+            onChange={(e) => setShopState(e.target.value)}
+            className="w-full min-h-[46px] px-4 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
+          >
+            <option value="">Select State</option>
+            {INDIAN_STATES.map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="p-3.5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="font-sans font-semibold text-[var(--status-success)] flex items-center gap-1.5">
@@ -390,6 +427,10 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
             setLatitude(loc.latitude);
             setLongitude(loc.longitude);
             setLocationName(loc.locationName);
+            const detected = locationService.extractStateFromLocationText(loc.locationName);
+            if (detected) {
+              setShopState(detected);
+            }
             setLocationErrorMsg(null);
             setIsMapOpen(false);
           }}

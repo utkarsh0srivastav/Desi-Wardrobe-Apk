@@ -14,7 +14,13 @@ import {
   Clock,
   RefreshCw,
 } from 'lucide-react';
-import { PricePolicy, Shop, ShopCategory, Shopkeeper } from '../../types/models';
+import {
+  INDIAN_STATES,
+  PricePolicy,
+  Shop,
+  ShopCategory,
+  Shopkeeper,
+} from '../../types/models';
 import { authService } from '../../services/authService';
 import { shopService } from '../../services/shopService';
 import { shopkeeperService } from '../../services/shopkeeperService';
@@ -69,6 +75,7 @@ export const ShopkeeperAuthPage: React.FC<ShopkeeperAuthPageProps> = ({
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationName, setLocationName] = useState('');
+  const [shopState, setShopState] = useState('');
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [autoLocateOnMapOpen, setAutoLocateOnMapOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -180,6 +187,10 @@ export const ShopkeeperAuthPage: React.FC<ShopkeeperAuthPageProps> = ({
         coords.longitude
       );
       setLocationName(readableAddress);
+      const detectedState = locationService.extractStateFromLocationText(readableAddress);
+      if (detectedState) {
+        setShopState(detectedState);
+      }
     } catch (err) {
       if (err instanceof LocationServiceError) {
         setLocationErrorMsg(err.shopkeeperMessage);
@@ -224,6 +235,7 @@ export const ShopkeeperAuthPage: React.FC<ShopkeeperAuthPageProps> = ({
         latitude,
         longitude,
         locationName,
+        state: shopState || locationService.extractStateFromLocationText(locationName),
         shopStatus: 'ACTIVE',
         profileStatus: 'COMPLETED',
       });
@@ -693,10 +705,34 @@ export const ShopkeeperAuthPage: React.FC<ShopkeeperAuthPageProps> = ({
                   type="text"
                   required
                   value={locationName}
-                  onChange={(e) => setLocationName(e.target.value)}
+                  onChange={(e) => {
+                    setLocationName(e.target.value);
+                    const detected = locationService.extractStateFromLocationText(e.target.value);
+                    if (detected && !shopState) {
+                      setShopState(detected);
+                    }
+                  }}
                   placeholder="e.g. Main Market, Near Bus Stand"
                   className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+                  State (India)
+                </label>
+                <select
+                  value={shopState}
+                  onChange={(e) => setShopState(e.target.value)}
+                  className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
+                >
+                  <option value="">Select State</option>
+                  {INDIAN_STATES.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {latitude !== null && longitude !== null && (
@@ -732,6 +768,10 @@ export const ShopkeeperAuthPage: React.FC<ShopkeeperAuthPageProps> = ({
             setLatitude(loc.latitude);
             setLongitude(loc.longitude);
             setLocationName(loc.locationName);
+            const detected = locationService.extractStateFromLocationText(loc.locationName);
+            if (detected) {
+              setShopState(detected);
+            }
             setLocationErrorMsg(null);
             setIsMapOpen(false);
           }}

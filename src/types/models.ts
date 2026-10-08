@@ -83,6 +83,77 @@ export type ThemeMode = 'light' | 'dark';
 
 export type AppEntryMode = 'CUSTOMER' | 'SHOPKEEPER' | 'ADMIN';
 
+export const INDIAN_STATES = [
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chhattisgarh',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+] as const;
+
+export type IndianState = (typeof INDIAN_STATES)[number];
+
+export type SponsorStatus = 'ACTIVE' | 'EXPIRED' | 'INACTIVE' | 'CANCELLED';
+
+export type SponsorDurationValue =
+  | '7_DAYS'
+  | '15_DAYS'
+  | '30_DAYS'
+  | '3_MONTHS'
+  | '6_MONTHS'
+  | '1_YEAR';
+
+export const SPONSOR_DURATION_OPTIONS: {
+  value: SponsorDurationValue;
+  label: string;
+  days: number;
+}[] = [
+  { value: '7_DAYS', label: '7 Days', days: 7 },
+  { value: '15_DAYS', label: '15 Days', days: 15 },
+  { value: '30_DAYS', label: '1 Month (30 Days)', days: 30 },
+  { value: '3_MONTHS', label: '3 Months (90 Days)', days: 90 },
+  { value: '6_MONTHS', label: '6 Months (180 Days)', days: 180 },
+  { value: '1_YEAR', label: '1 Year (365 Days)', days: 365 },
+];
+
+export interface ShopSponsor {
+  sponsorId: string;
+  shopId: string;
+  shopName: string;
+  shopkeeperId?: string;
+  isSponsored: boolean;
+  sponsorStatus: SponsorStatus;
+  sponsorPlan?: string;
+  sponsorStartDate: string;
+  sponsorEndDate: string;
+  sponsoredByAdminUid?: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
 export interface Shop {
   shopId: string;
   shopkeeperId: string;
@@ -95,13 +166,83 @@ export interface Shop {
   latitude: number;
   longitude: number;
   locationName: string;
+  state?: string;
   shopStatus?: ShopStatus;
   profileStatus?: ProfileStatus;
   openingTime?: string;
   closingTime?: string;
   status?: 'OPEN' | 'CLOSED';
+  isSponsored?: boolean;
+  sponsorStatus?: SponsorStatus;
+  sponsorPlan?: string;
+  sponsorStartDate?: string;
+  sponsorEndDate?: string;
   updatedAt?: string;
   createdAt: string;
+}
+
+/**
+ * Extracts or resolves one of the 28 Indian States from a shop's explicit `state` field
+ * or from its `locationName` string if `state` was not explicitly set.
+ */
+export function resolveShopState(shop: Partial<Shop> | null | undefined): string {
+  if (!shop) return '';
+  if (typeof shop.state === 'string' && shop.state.trim()) {
+    const trimmed = shop.state.trim();
+    const matched = INDIAN_STATES.find(
+      (s) => s.toLowerCase() === trimmed.toLowerCase()
+    );
+    return matched || trimmed;
+  }
+  if (typeof shop.locationName === 'string' && shop.locationName.trim()) {
+    const lowerLoc = shop.locationName.toLowerCase();
+    for (const state of INDIAN_STATES) {
+      if (lowerLoc.includes(state.toLowerCase())) {
+        return state;
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Checks whether a shop is currently actively sponsored and not expired.
+ */
+export function isShopCurrentlySponsored(
+  shop: Partial<Shop> | null | undefined,
+  sponsorRecord?: ShopSponsor | null
+): boolean {
+  const now = Date.now();
+
+  if (sponsorRecord) {
+    if (!sponsorRecord.isSponsored || sponsorRecord.sponsorStatus !== 'ACTIVE') {
+      return false;
+    }
+    const startMs = new Date(sponsorRecord.sponsorStartDate).getTime();
+    const endMs = new Date(sponsorRecord.sponsorEndDate).getTime();
+    if (Number.isNaN(endMs)) return false;
+    if (!Number.isNaN(startMs) && now < startMs) return false;
+    return now <= endMs;
+  }
+
+  if (!shop || !shop.isSponsored) return false;
+  if (shop.sponsorStatus && shop.sponsorStatus !== 'ACTIVE') return false;
+  if (!shop.sponsorEndDate) return false;
+
+  const startMs = shop.sponsorStartDate ? new Date(shop.sponsorStartDate).getTime() : 0;
+  const endMs = new Date(shop.sponsorEndDate).getTime();
+  if (Number.isNaN(endMs)) return false;
+  if (startMs > 0 && !Number.isNaN(startMs) && now < startMs) return false;
+  return now <= endMs;
+}
+
+export function getShopSponsorRemainingDays(endDateStr?: string): number {
+  if (!endDateStr) return 0;
+  const endMs = new Date(endDateStr).getTime();
+  if (Number.isNaN(endMs)) return 0;
+  const diffMs = endMs - Date.now();
+  if (diffMs <= 0) return 0;
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
 export interface Shopkeeper {

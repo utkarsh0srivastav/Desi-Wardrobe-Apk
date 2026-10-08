@@ -1,4 +1,10 @@
-import { CustomerCoordinates, Shop } from '../types/models';
+import {
+  CustomerCoordinates,
+  INDIAN_STATES,
+  isShopCurrentlySponsored,
+  Shop,
+  ShopSponsor,
+} from '../types/models';
 import { CustomerPublicShop, toCustomerPublicShop } from '../utils/category';
 import { storage } from '../utils/storage';
 
@@ -420,7 +426,21 @@ export const locationService = {
   },
 
   /**
-   * Reverse geocodes latitude/longitude into a human-readable locality/city name.
+   * Extracts a matching Indian state from any address/location text.
+   */
+  extractStateFromLocationText: (text: string): string => {
+    if (!text) return '';
+    const lower = text.toLowerCase();
+    for (const state of INDIAN_STATES) {
+      if (lower.includes(state.toLowerCase())) {
+        return state;
+      }
+    }
+    return '';
+  },
+
+  /**
+   * Reverse geocodes latitude/longitude into a human-readable locality/city/state name.
    */
   reverseGeocodeLocation: async (latitude: number, longitude: number): Promise<string> => {
     try {
@@ -449,12 +469,21 @@ export const locationService = {
       });
       if (res.ok) {
         const data = await res.json();
+        const stateFromAddr =
+          typeof data?.address?.state === 'string' ? data.address.state.trim() : '';
         if (data?.display_name) {
           const parts = String(data.display_name)
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);
-          return parts.slice(0, 4).join(', ');
+          const shortAddress = parts.slice(0, 4).join(', ');
+          if (
+            stateFromAddr &&
+            !shortAddress.toLowerCase().includes(stateFromAddr.toLowerCase())
+          ) {
+            return `${shortAddress}, ${stateFromAddr}`;
+          }
+          return shortAddress;
         }
       }
     } catch {
@@ -500,10 +529,19 @@ export const locationService = {
   },
 
   /**
-   * Sorts shops from nearest to farthest based on calculated real distance.
+   * Sorts shops so that actively sponsored shops appear FIRST (nearest -> farthest),
+   * followed by normal shops (nearest -> farthest).
    */
-  sortShopsByDistance: (shops: ShopWithDistance[]): ShopWithDistance[] => {
+  sortShopsByDistance: (
+    shops: ShopWithDistance[],
+    sponsorMap?: Record<string, ShopSponsor>
+  ): ShopWithDistance[] => {
     return [...shops].sort((a, b) => {
+      const aSponsored = isShopCurrentlySponsored(a, sponsorMap?.[a.shopId]);
+      const bSponsored = isShopCurrentlySponsored(b, sponsorMap?.[b.shopId]);
+      if (aSponsored && !bSponsored) return -1;
+      if (!aSponsored && bSponsored) return 1;
+
       if (a.distanceKm === null && b.distanceKm === null) return 0;
       if (a.distanceKm === null) return 1;
       if (b.distanceKm === null) return -1;
@@ -513,15 +551,16 @@ export const locationService = {
 
   /**
    * Filters ACTIVE + COMPLETED shops within 100 KM of the customer's real location
-   * and sorts them nearest -> farthest.
+   * and sorts them with actively sponsored shops first, then nearest -> farthest.
    */
   getShopsSortedByDistance: (
     shops: Shop[],
     customerCoords: CustomerCoordinates | null,
-    maxRadiusKm: number = MAX_SHOP_DISCOVERY_RADIUS_KM
+    maxRadiusKm: number = MAX_SHOP_DISCOVERY_RADIUS_KM,
+    sponsorMap?: Record<string, ShopSponsor>
   ): ShopWithDistance[] => {
     const filtered = locationService.filterShopsWithinRadius(shops, customerCoords, maxRadiusKm);
-    return locationService.sortShopsByDistance(filtered);
+    return locationService.sortShopsByDistance(filtered, sponsorMap);
   },
 
   /**
@@ -531,13 +570,23 @@ export const locationService = {
   getPublicShopsSortedByDistance: (
     shops: Shop[],
     customerCoords: CustomerCoordinates | null,
-    maxRadiusKm: number = MAX_SHOP_DISCOVERY_RADIUS_KM
+    maxRadiusKm: number = MAX_SHOP_DISCOVERY_RADIUS_KM,
+    sponsorMap?: Record<string, ShopSponsor>
   ): PublicShopWithDistance[] => {
-    const sorted = locationService.getShopsSortedByDistance(shops, customerCoords, maxRadiusKm);
+    const sorted = locationService.getShopsSortedByDistance(
+      shops,
+      customerCoords,
+      maxRadiusKm,
+      sponsorMap
+    );
     return sorted.map((shopWithDist) => {
       const { distanceKm, ...shop } = shopWithDist;
+      const isSponsoredActive = isShopCurrentlySponsored(shop, sponsorMap?.[shop.shopId]);
       return {
-        ...toCustomerPublicShop(shop),
+        ...toCustomerPublicShop({
+          ...shop,
+          isSponsored: isSponsoredActive,
+        }),
         distanceKm,
       };
     });

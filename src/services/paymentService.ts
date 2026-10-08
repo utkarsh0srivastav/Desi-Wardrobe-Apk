@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -709,6 +710,93 @@ export const paymentService = {
         updatedLocalPayments.unshift(committedPayment);
       }
       storage.savePayments(updatedLocalPayments);
+
+      // Non-blocking customer confirmation email via /api/send-email (Brevo)
+      // Triggered strictly AFTER payment is approved, booking is confirmed, and Booking ID is finalized.
+      void (async () => {
+        try {
+          const firstBooking = committedBookings[0];
+          const customerId = committedPayment.customerId || firstBooking?.customerId || '';
+          const customerMobile =
+            committedPayment.customerMobile || firstBooking?.customerMobile || '';
+
+          let customerEmail = '';
+          const localCustomer = storage
+            .getCustomers()
+            .find(
+              (c) =>
+                (customerId && c.customerId === customerId) ||
+                (customerMobile && c.mobile === customerMobile)
+            );
+          if (localCustomer?.email && localCustomer.email.trim()) {
+            customerEmail = localCustomer.email.trim();
+          } else if (customerId) {
+            try {
+              const custSnap = await getDoc(doc(db, 'customers', customerId));
+              if (custSnap.exists()) {
+                const custData = custSnap.data() as Record<string, unknown>;
+                if (typeof custData.email === 'string' && custData.email.trim()) {
+                  customerEmail = custData.email.trim();
+                }
+              }
+            } catch {
+              // Ignore customer lookup errors so payment approval is never affected
+            }
+          }
+
+          if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+            return;
+          }
+
+          const allShops = storage.getShops();
+          for (const confirmedBooking of committedBookings) {
+            const matchedShop = allShops.find((s) => s.shopId === confirmedBooking.shopId);
+            await fetch('/api/send-email', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: customerEmail,
+                customerEmail,
+                email: customerEmail,
+                customerName:
+                  confirmedBooking.customerName || committedPayment.customerName,
+                customerMobile:
+                  confirmedBooking.customerMobile || committedPayment.customerMobile,
+                bookingId: confirmedBooking.bookingId,
+                bookingReference:
+                  confirmedBooking.bookingReference || committedPayment.bookingReference,
+                productName: confirmedBooking.productName,
+                size: confirmedBooking.size,
+                color: confirmedBooking.color,
+                quantity: confirmedBooking.quantity,
+                price: confirmedBooking.price,
+                amountPaid:
+                  confirmedBooking.paymentAmount || committedPayment.expectedAmount,
+                paymentAmount:
+                  confirmedBooking.paymentAmount || committedPayment.expectedAmount,
+                shopName: confirmedBooking.shopName || committedPayment.shopName,
+                shopMobile: matchedShop?.mobile || '',
+                shopAddress:
+                  confirmedBooking.shopLocationName || matchedShop?.locationName || '',
+                shopLocationName:
+                  confirmedBooking.shopLocationName || matchedShop?.locationName || '',
+                pickupDeadline: confirmedBooking.pickupDeadline,
+                approvedAt:
+                  confirmedBooking.approvedAt ||
+                  confirmedBooking.confirmedAt ||
+                  committedPayment.approvedAt,
+              }),
+            });
+          }
+        } catch (emailErr) {
+          console.warn(
+            '[Desi Wardrobe] Non-blocking booking confirmation email skipped or failed:',
+            emailErr
+          );
+        }
+      })();
 
       return {
         payment: committedPayment,
